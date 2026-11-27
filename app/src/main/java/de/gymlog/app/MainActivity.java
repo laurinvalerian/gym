@@ -336,6 +336,10 @@ public class MainActivity extends Activity {
             });
         }
 
+        @JavascriptInterface public void scheduleReminder(double at) { ReminderReceiver.schedule(MainActivity.this, (long) at); }
+
+        @JavascriptInterface public void cancelReminder() { ReminderReceiver.cancel(MainActivity.this); }
+
         @JavascriptInterface public void toast(String msg) {
             runOnUiThread(() -> Toast.makeText(MainActivity.this, msg, Toast.LENGTH_SHORT).show());
         }

@@ -1,14 +1,14 @@
 {
- "web": 1,
+ "web": 2,
  "minNative": 3,
  "files": [
   {
    "name": "app.css",
-   "sha256": "2baa447300ca52524425fdc5fde32d4b9bf4fc664ca35d787a7999e187066059"
+   "sha256": "e75f1509c6ce76736bace1b7554070b7fff7317a1d2b1c5b285b437c5d580285"
   },
   {
    "name": "app.js",
-   "sha256": "c02ef98073b3c892479d96ffa34455963cc811cc21472c33030764850491ee89"
+   "sha256": "469e8b52490eb945a35bb35e47d435b93699ee0cf0815d82a5073f872cc3d25e"
   },
   {
    "name": "index.html",
@@ -16,12 +16,12 @@
   },
   {
    "name": "version.json",
-   "sha256": "0e98a1d77c9f8185fd6051a5706f3f4508e71f69e67f11e173fbeac4061d1a0d"
+   "sha256": "34790eb0695ec98c3ff72e7b44115ac512fabc77c5781962bae56c446ff02e9a"
   }
  ],
  "apk": "GymLog.apk",
- "apkVersion": 3,
- "apkVersionName": "1.2",
- "apkSha256": "fe99314dc7eec284919fc97a007efc46d549d2014b0d677ca8756540ca3b12cf",
- "notes": "Updates automatisch, Anzeige unter der Statusleiste korrigiert"
+ "apkVersion": 4,
+ "apkVersionName": "1.3",
+ "apkSha256": "2bd73cb4c4f0187c0ec7ee0b92e0d8fe432dc7b0dae4b11a6ef16e9bef653295",
+ "notes": "Eigene Übungen, neues Design, Deload-Erinnerung"
 }
