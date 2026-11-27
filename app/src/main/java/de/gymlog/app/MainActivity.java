@@ -110,7 +110,7 @@ public class MainActivity extends Activity {
     @Override protected void onResume() {
         super.onResume(); foreground = true;
         js("window.onAppResume && window.onAppResume()");
-        if (System.currentTimeMillis() - lastCheck > 30 * 60 * 1000L) checkUpdates(false);
+        if (System.currentTimeMillis() - lastCheck > 60 * 1000L) checkUpdates(false);
     }
 
     /** Prüft online auf neue Version. Ohne Internet passiert einfach nichts. */

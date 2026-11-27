@@ -1,5 +1,5 @@
 {
- "web": 3,
+ "web": 4,
  "minNative": 3,
  "files": [
   {
@@ -16,12 +16,12 @@
   },
   {
    "name": "version.json",
-   "sha256": "7a642353acc69b7a8ceb36c8f068cf3ce9818fa80affc1eade712e6604240b9d"
+   "sha256": "cbc2f4596fa8e1e761cbb276e5f7b09a40c4ca57763b0df5c7b317dbaf34bc8e"
   }
  ],
  "apk": "GymLog.apk",
- "apkVersion": 4,
- "apkVersionName": "1.3",
- "apkSha256": "d561a14e884f65ea0287fafc4b11e959d2e1ac9f79509b33fda7183e5d18b3c4",
- "notes": "Fenster springt beim Antippen von + und − nicht mehr"
+ "apkVersion": 5,
+ "apkVersionName": "1.4",
+ "apkSha256": "f5cf8a17d18b3602c0b430fd9def90bc9908586b08e9e7f26aa28bb545bd9b69",
+ "notes": "Sucht bei jedem Öffnen nach Updates"
 }
