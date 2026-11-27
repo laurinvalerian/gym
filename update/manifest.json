@@ -1,14 +1,14 @@
 {
- "web": 5,
+ "web": 6,
  "minNative": 3,
  "files": [
   {
    "name": "app.css",
-   "sha256": "da0e90353d092c3bd70572e03628df031e6a59a9ea5e0b1302a012ed33b3cb54"
+   "sha256": "da8c7573bf4f8712ca8eb996da28737eaea375789d06845cae6c4e196f4300c7"
   },
   {
    "name": "app.js",
-   "sha256": "88dc6dfe27521ef776a69207955fc9f54758250b357fcae24cc3e3abe997bb78"
+   "sha256": "22114e0ad72d3c549886efa62ed88a39af9f3f7045dc5eeb32e02db1a0423b1a"
   },
   {
    "name": "index.html",
@@ -16,12 +16,12 @@
   },
   {
    "name": "version.json",
-   "sha256": "afaa15e1815cfe5cd4bf9aa4d935e6ec3605368223593455c827920ce60d9137"
+   "sha256": "9e2480a4bf4171954331e15355b212297ca15c01e43bdbb9f23470559eeb92e8"
   }
  ],
  "apk": "GymLog.apk",
  "apkVersion": 6,
  "apkVersionName": "1.5",
- "apkSha256": "8cfa284cf9c30c32c995ebdc035020ab46211f711347be33ff99532f33693975",
- "notes": "Sicherung in Google Drive, Schutz vor Datenverlust"
+ "apkSha256": "74507991b745ab2f130a87192e5e53b1221ff8c91c5c00caa3eac4d25da55464",
+ "notes": "Sätze einzeln einstellen, Pause pro Satz, Übung umbenennen"
 }

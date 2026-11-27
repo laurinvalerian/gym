@@ -5,10 +5,10 @@
 const NATIVE = typeof window.Android !== 'undefined';
 const KEY = 'gymlog';
 const DEFAULTS = () => ({
-  v: 2,
+  v: 3,
   weights: [],     // {d:'YYYY-MM-DD', kg}
   exercises: [],   // {id, name, mode:'reps'|'time', load:'weight'|'bw'|'bwplus', note}
-  plans: [],       // {id, name, items:[{id, exId, warm, sets, target, rest, warmRest}]}
+  plans: [],       // {id, name, items:[{id, exId, sets:[{t:'w'|'n', goal:'8-10', rest:120}]}]}
   workouts: [],    // {id, planId, name, start, end, deload, items:[{exId, note, sets:[{t:'w'|'n', kg, reps, rir}]}]}
   active: null,
   settings: {
@@ -27,7 +27,22 @@ function merge(def, obj) {
   return out;
 }
 function migrate(d) {
-  if (!d || d.v >= 2) return d;
+  if (!d) return d;
+  if ((d.v || 1) < 2) migrate1(d);
+  if (d.v < 3) {
+    // Plan-Übungen: einzelne Sätze mit eigener Pause
+    (d.plans || []).forEach(p => p.items.forEach(it => {
+      if (Array.isArray(it.sets)) return;
+      const sets = [];
+      for (let i = 0; i < (it.warm || 0); i++) sets.push({ t: 'w', goal: it.target || '8-10', rest: it.warmRest || 0 });
+      for (let i = 0; i < (it.sets || 1); i++) sets.push({ t: 'n', goal: it.target || '8-10', rest: it.rest ?? 120 });
+      it.sets = sets; delete it.warm; delete it.target; delete it.rest; delete it.warmRest;
+    }));
+    d.v = 3;
+  }
+  return d;
+}
+function migrate1(d) {
   const st = d.settings || {};
   const oldWarmOn = st.warmRest !== false, oldWarmSec = st.warmRestSec ?? 60;
   st.warmRest = oldWarmOn ? oldWarmSec : 0; delete st.warmRestSec;
@@ -40,7 +55,6 @@ function migrate(d) {
   (d.plans || []).forEach(p => p.items.forEach(conv));
   if (d.active) { d.active.deload = false; d.active.items.forEach(conv); }
   d.v = 2;
-  return d;
 }
 function load() {
   let raw = '';
@@ -471,8 +485,13 @@ function viewTraining() {
   h += `<div class="two"><button class="btn" data-a="newplan">+ Neuer Plan</button><button class="btn" data-a="start" data-id="">Freies Training</button></div>`;
   return ['Training', h];
 }
-function newItem(exId) { return { id: uid(), exId, warm: 1, sets: 3, target: isTime(exOf(exId)) ? '30-45' : '8-10', rest: S.settings.rest, warmRest: S.settings.warmRest }; }
-const itemSum = it => { const ex = exOf(it.exId); return `${it.warm ? it.warm + ' Aufwärm · ' : ''}${it.sets} × ${esc(it.target)} ${isTime(ex) ? 's' : 'Wdh.'} · Pause ${mmss(it.rest)}`; };
+function newItem(exId) { return { id: uid(), exId, sets: [{ t: 'n', goal: isTime(exOf(exId)) ? '30-45' : '8-10', rest: S.settings.rest }] }; }
+const uniq = a => [...new Set(a)];
+function itemSum(it) {
+  const ex = exOf(it.exId), w = it.sets.filter(s => s.t === 'w'), n = it.sets.filter(s => s.t !== 'w');
+  const goals = uniq(n.map(s => s.goal)), rests = uniq(n.map(s => s.rest));
+  return `${w.length ? w.length + ' Aufwärm · ' : ''}${plural(n.length, 'Satz', 'Sätze')}${n.length ? ` × ${goals.length <= 3 ? goals.map(esc).join(' / ') : 'versch.'} ${isTime(ex) ? 's' : 'Wdh.'} · Pause ${rests.length === 1 ? mmss(rests[0]) : 'individuell'}` : ''}`;
+}
 function viewPlanEdit(id) {
   const p = S.plans.find(x => x.id === id);
   if (!p) { stack.pop(); return viewTraining(); }
@@ -487,22 +506,24 @@ function viewPlanEdit(id) {
 }
 function curPlan() { return S.plans.find(p => p.id === topView().id); }
 function itemEditor(itemId) {
-  const p = curPlan(), it = p.items.find(i => i.id === itemId); if (!it) return;
+  const p = curPlan(), it = p && p.items.find(i => i.id === itemId); if (!it) return;
   const ex = exOf(it.exId), i = p.items.indexOf(it);
-  const saveTarget = () => { const t = $('#mTgt'); if (t) { it.target = t.value.trim() || it.target; saveNow(); } };
-  itemEditor.it = it; itemEditor.saveTarget = saveTarget;
-  modal(`<h3>${esc(ex.name)}</h3><div class="sub">${exTags(ex)}</div>
-    <div class="list">
-      ${rowItem('Aufwärmsätze', stepper('ist', 'warm', it.warm))}
-      ${rowItem('Arbeitssätze', stepper('ist', 'sets', it.sets))}
-      ${rowItem(isTime(ex) ? 'Ziel in Sekunden' : 'Ziel-Wdh.', `<input class="f sm c" id="mTgt" value="${esc(it.target)}" placeholder="8-10">`, 'Zahl oder Bereich, z.B. 8-10')}
-      ${rowItem('Pause', stepper('ist', 'rest', mmss(it.rest)))}
-      ${rowItem('Pause nach Aufwärmen', stepper('ist', 'warmRest', it.warmRest ? mmss(it.warmRest) : 'Aus'))}
-    </div>
-    <div class="two" style="margin-top:12px"><button class="btn" data-a="imove" data-s="-1" ${i === 0 ? 'disabled' : ''}>↑ Nach oben</button><button class="btn" data-a="imove" data-s="1" ${i === p.items.length - 1 ? 'disabled' : ''}>↓ Nach unten</button></div>`,
-    [{ l: 'Entfernen', c: 'danger', f: () => { p.items = p.items.filter(x => x !== it); saveNow(); render(); } }, { l: 'Fertig', c: 'pri', f: () => { saveTarget(); render(); } }]);
+  itemEditor.it = it;
+  let wn = 0, nn = 0;
+  const rows = it.sets.map((st, si) => {
+    const lab = st.t === 'w' ? 'W' + (++wn > 1 ? wn : '') : ++nn;
+    return `<button class="badge ${st.t === 'w' ? 'w' : ''}" data-a="tsw" data-s="${si}">${lab}</button>
+      <input class="tgoal" data-a="tgoal" data-s="${si}" value="${esc(st.goal)}" placeholder="${isTime(ex) ? '30' : '8-10'}">
+      <div class="stepper"><button data-a="trest" data-s="${si}" data-d="-1">−</button><span>${st.rest ? mmss(st.rest) : 'Aus'}</span><button data-a="trest" data-s="${si}" data-d="1">+</button></div>
+      <button class="iconbtn ghost x" data-a="tdel" data-s="${si}" ${it.sets.length < 2 ? 'disabled' : ''} aria-label="Satz entfernen">✕</button>`;
+  }).join('');
+  modal(`<h3>${esc(ex.name)}</h3><div class="sub">${exTags(ex)} · <span class="tap acc" data-a="itexedit" data-id="${ex.id}">Name / Typ ändern</span></div>
+    <div class="tsets"><span>Satz</span><span>${isTime(ex) ? 'Ziel Sek.' : 'Ziel Wdh.'}</span><span>Pause danach</span><span></span>${rows}</div>
+    <button class="btn block" data-a="tadd" style="margin-top:10px">+ Satz</button>
+    <div class="hint">Tipp auf die Nummer, um einen Satz zum Aufwärmsatz (W) zu machen und zurück. Ziel als Zahl oder Bereich, z.B. 8-10.</div>
+    <div class="two"><button class="btn" data-a="imove" data-s="-1" ${i === 0 ? 'disabled' : ''}>↑ Nach oben</button><button class="btn" data-a="imove" data-s="1" ${i === p.items.length - 1 ? 'disabled' : ''}>↓ Nach unten</button></div>`,
+    [{ l: 'Aus Plan entfernen', c: 'danger', f: () => { p.items = p.items.filter(x => x !== it); saveNow(); render(); } }, { l: 'Fertig', c: 'pri', f: () => { saveNow(); render(); } }]);
 }
-const IST = { warm: [1, 0, 6], sets: [1, 1, 10], rest: [15, 0, 600], warmRest: [15, 0, 300] };
 
 // ================= Training =================
 /** Letzte Sätze einer Übung, bevorzugt aus einem normalen (nicht Deload) Training */
@@ -511,34 +532,38 @@ function lastSets(exId, includeDeload) {
   for (const w of ws) { const it = w.items.find(i => i.exId === exId); if (it && it.sets.length) return { w, warm: it.sets.filter(s => s.t === 'w'), work: it.sets.filter(s => s.t !== 'w') }; }
   return includeDeload ? null : lastSets(exId, true);
 }
-function buildWorkSets(pi, deload, count) {
-  const ex = exOf(pi.exId), base = lastSets(pi.exId), d = S.settings.deload, step = S.settings.step;
-  const [rmin] = range(pi.target);
-  const n = count != null ? count : (deload ? Math.max(1, Math.round(pi.sets * (1 - d.setsPct / 100))) : pi.sets);
-  const out = [];
-  for (let i = 0; i < n; i++) {
-    const b = base && (base.work[i] || base.work[base.work.length - 1]);
-    let kg = b ? num(b.kg) : NaN, reps = b ? num(b.reps) : rmin;
-    if (base && base.w.deload && !deload) { if (kg > 0) kg = roundStep(kg / (1 - d.weightPct / 100), step); reps = Math.max(reps, rmin); }
-    if (deload && !(base && base.w.deload)) { if (kg > 0) kg = roundStep(kg * (1 - d.weightPct / 100), step); reps = Math.max(1, Math.round(reps * (1 - d.repsPct / 100))); }
-    out.push({ t: 'n', kg: hasKg(ex) && isFinite(kg) ? kg : '', reps: isFinite(reps) ? reps : '', rir: '', done: false });
-  }
-  return out;
+/** Vorlage einer laufenden Übung (auch für Trainings aus älteren Versionen) */
+function itTpl(it) {
+  if (it.tpl) return it.tpl;
+  return it.sets.map(st => ({ t: st.t, goal: st.goal || it.target || '8-10', rest: st.rest ?? (st.t === 'w' ? (it.warmRest || 0) : (it.rest ?? 120)) }));
+}
+function workSet(ex, base, i, t, deload) {
+  const d = S.settings.deload, step = S.settings.step, [rmin] = range(t.goal);
+  const b = base && (base.work[i] || base.work[base.work.length - 1]);
+  let kg = b ? num(b.kg) : NaN, reps = b ? num(b.reps) : rmin;
+  if (base && base.w.deload && !deload) { if (kg > 0) kg = roundStep(kg / (1 - d.weightPct / 100), step); reps = Math.max(reps, rmin); }
+  if (deload && !(base && base.w.deload)) { if (kg > 0) kg = roundStep(kg * (1 - d.weightPct / 100), step); reps = Math.max(1, Math.round(reps * (1 - d.repsPct / 100))); }
+  return { t: 'n', kg: hasKg(ex) && isFinite(kg) ? kg : '', reps: isFinite(reps) ? reps : '', rir: '', goal: t.goal, rest: t.rest, done: false };
 }
 function buildItem(pi, deload) {
-  const base = lastSets(pi.exId), sets = [];
-  for (let i = 0; i < pi.warm; i++) { const b = base && (base.warm[i] || base.warm[base.warm.length - 1]); sets.push({ t: 'w', kg: b ? b.kg : '', reps: b ? b.reps : '', done: false }); }
-  sets.push(...buildWorkSets(pi, deload));
-  return { exId: pi.exId, target: pi.target, plannedSets: pi.sets, rest: pi.rest, warmRest: pi.warmRest, note: '', sets };
+  const ex = exOf(pi.exId), base = lastSets(pi.exId), tpl = pi.sets.map(x => ({ ...x }));
+  const nWork = tpl.filter(x => x.t !== 'w').length;
+  const keep = deload ? Math.max(1, Math.round(nWork * (1 - S.settings.deload.setsPct / 100))) : nWork;
+  let wi = 0, ni = 0; const sets = [];
+  for (const t of tpl) {
+    if (t.t === 'w') { const b = base && (base.warm[wi] || base.warm[base.warm.length - 1]); wi++; sets.push({ t: 'w', kg: b ? b.kg : '', reps: b ? b.reps : range(t.goal)[0], goal: t.goal, rest: t.rest, done: false }); }
+    else { if (ni < keep) sets.push(workSet(ex, base, ni, t, deload)); ni++; }
+  }
+  return { exId: pi.exId, tpl, note: '', sets };
 }
 function applyDeloadToActive(on) {
   const a = S.active; if (!a) return;
   a.deload = on;
   a.items.forEach(it => {
-    const doneWork = it.sets.filter(s => s.t !== 'w' && s.done).length;
-    const pi = { exId: it.exId, target: it.target, sets: it.plannedSets || it.sets.filter(s => s.t !== 'w').length };
-    const n = on ? Math.max(1, Math.round(pi.sets * (1 - S.settings.deload.setsPct / 100))) : pi.sets;
-    it.sets = it.sets.filter(s => s.t === 'w' || s.done).concat(buildWorkSets(pi, on, n).slice(doneWork));
+    const tpl = itTpl(it); it.tpl = tpl;
+    const fresh = buildItem({ exId: it.exId, sets: tpl }, on).sets.filter(x => x.t !== 'w');
+    const doneN = it.sets.filter(x => x.t !== 'w' && x.done);
+    it.sets = it.sets.filter(x => x.t === 'w').concat(doneN, fresh.slice(doneN.length));
   });
 }
 function startWorkout(planId) {
@@ -562,13 +587,19 @@ function suggestion(it, idx) {
   const ex = exOf(it.exId);
   if (S.active.deload || isTime(ex) || !hasKg(ex)) return '';
   const b = lastSets(it.exId); if (!b || b.w.deload || !b.work.length) return '';
-  const [rmin, rmax] = range(it.target);
-  if (b.work.length >= (it.plannedSets || 1) && b.work.every(s => num(s.reps) >= rmax) && it.sets.every(s => !s.done || s.t === 'w')) {
+  const tw = itTpl(it).filter(x => x.t !== 'w');
+  const [rmin, rmax] = range((tw[0] || {}).goal);
+  if (b.work.length >= Math.max(1, tw.length) && b.work.every((x, j) => num(x.reps) >= range((tw[j] || tw[0] || {}).goal)[1]) && it.sets.every(s => !s.done || s.t === 'w')) {
     const cur = it.sets.find(s => s.t !== 'w'), kg = num(b.work[0].kg);
     if (cur && num(cur.kg) > (kg || 0)) return '';
     return `<button class="suggest" data-a="sugg" data-id="${idx}">↑ Letztes Mal überall ${rmax}+ Wdh. Jetzt +${fmt(S.settings.step)} kg und ${rmin} Wdh.?</button>`;
   }
   return '';
+}
+function sessHead(it, ex) {
+  const n = itTpl(it).filter(x => x.t !== 'w'); if (!n.length) return '';
+  const g = uniq(n.map(x => x.goal)), r = uniq(n.map(x => x.rest));
+  return `${g.length <= 3 ? g.map(esc).join(' / ') : 'versch.'} ${isTime(ex) ? 's' : 'Wdh.'} · Pause ${r.length === 1 ? mmss(r[0]) : 'individuell'}`;
 }
 function viewSession() {
   const a = S.active;
@@ -582,7 +613,7 @@ function viewSession() {
     const ex = exOf(it.exId), kg = hasKg(ex), rir = rirOn && !isTime(ex);
     const cols = `40px ${kg ? '1fr ' : ''}1fr ${rir ? '52px ' : ''}46px`;
     let wn = 0, nn = 0;
-    h += `<div class="card ex"><div class="ex-h"><div class="ex-t"><b>${esc(ex.name)}</b><small>${esc(it.target)} ${isTime(ex) ? 's' : 'Wdh.'} · Pause ${mmss(it.rest)}</small></div><button class="iconbtn ghost" data-a="exmenu" data-id="${idx}" aria-label="Menü">${IC.more}</button></div>
+    h += `<div class="card ex"><div class="ex-h"><div class="ex-t"><b>${esc(ex.name)}</b><small>${sessHead(it, ex)}</small></div><button class="iconbtn ghost" data-a="exmenu" data-id="${idx}" aria-label="Menü">${IC.more}</button></div>
       <div class="ex-prev">${esc(prevText(it.exId))}</div>`;
     if (ex.note) h += `<div class="note tap" data-a="snote" data-id="${idx}">📌 ${esc(ex.note)}</div>`;
     if (it.note) h += `<div class="note tap" data-a="snote" data-id="${idx}">📝 ${esc(it.note)}</div>`;
@@ -857,7 +888,7 @@ function modal(html, btns) {
 function closeModal() { $('#modal').classList.add('hidden'); $('#modal').innerHTML = ''; if (pendingReload) setTimeout(maybeReload, 300); }
 $('#modal').addEventListener('click', e => {
   if (e.target.id !== 'modal') return;
-  if ($('#mTgt') && itemEditor.saveTarget) { itemEditor.saveTarget(); closeModal(); render(); } else closeModal();
+  closeModal(); if (topView() && topView().v === 'plan') render();
 });
 
 // ================= Aktionen =================
@@ -916,13 +947,17 @@ const A = {
     modal(`<h3>„${esc(p.name || 'Plan')}“ löschen?</h3><p class="info">Deine bisherigen Trainings und der Verlauf bleiben erhalten.</p>`,
       [{ l: 'Abbrechen' }, { l: 'Löschen', c: 'danger', f: () => { S.plans = S.plans.filter(x => x !== p); saveNow(); if (topView() && topView().v === 'plan') stack.pop(); render(true); } }]);
   },
-  iadd: () => { const pid = topView().id; exercisePicker(e => { const p = S.plans.find(x => x.id === pid); p.items.push(newItem(e.id)); saveNow(); render(); }); },
+  iadd: () => { const pid = topView().id; exercisePicker(e => { const p = S.plans.find(x => x.id === pid), it = newItem(e.id); p.items.push(it); saveNow(); render(); itemEditor(it.id); }); },
+  tsw: el => { const st = itemEditor.it.sets[+el.dataset.s]; st.t = st.t === 'w' ? 'n' : 'w'; if (st.t === 'w' && st.rest === S.settings.rest) st.rest = S.settings.warmRest; else if (st.t === 'n' && st.rest === S.settings.warmRest) st.rest = S.settings.rest; saveNow(); itemEditor(itemEditor.it.id); },
+  trest: el => { const st = itemEditor.it.sets[+el.dataset.s]; st.rest = Math.max(0, Math.min(600, (st.rest || 0) + 15 * +el.dataset.d)); saveNow(); itemEditor(itemEditor.it.id); },
+  tdel: el => { const it = itemEditor.it; if (it.sets.length > 1) it.sets.splice(+el.dataset.s, 1); saveNow(); itemEditor(it.id); },
+  tadd: () => { const it = itemEditor.it, l = it.sets[it.sets.length - 1] || {}; it.sets.push({ t: 'n', goal: l.t === 'n' ? l.goal : (it.sets.find(x => x.t === 'n') || l).goal || '8-10', rest: l.t === 'n' ? l.rest : S.settings.rest }); saveNow(); itemEditor(it.id); },
+  itexedit: el => { const it = itemEditor.it; exerciseEditor(el.dataset.id, () => { render(); if (curPlan() && curPlan().items.includes(it)) itemEditor(it.id); }); },
   itemedit: el => itemEditor(el.dataset.id),
-  ist: el => { const it = itemEditor.it, f = el.dataset.id, [st, lo, hi] = IST[f]; itemEditor.saveTarget(); it[f] = Math.min(hi, Math.max(lo, it[f] + st * +el.dataset.s)); saveNow(); itemEditor(it.id); },
   imove: el => {
     const p = curPlan(), it = itemEditor.it, i = p.items.indexOf(it), j = i + +el.dataset.s;
     if (j < 0 || j >= p.items.length) return;
-    itemEditor.saveTarget(); [p.items[i], p.items[j]] = [p.items[j], p.items[i]]; saveNow(); render(); itemEditor(it.id);
+    [p.items[i], p.items[j]] = [p.items[j], p.items[i]]; saveNow(); render(); itemEditor(it.id);
   },
   start: el => startWorkout(el.dataset.id),
   resume: () => { stack = []; go('session'); },
@@ -933,7 +968,7 @@ const A = {
     s.done = !s.done;
     if (s.done) {
       if (!(num(s.reps) > 0)) { s.done = false; toast(`Erst ${isTime(exOf(it.exId)) ? 'Sekunden' : 'Wdh.'} eintragen`); return; }
-      const sec = s.t === 'w' ? (it.warmRest || 0) : it.rest;
+      const sec = s.rest != null ? s.rest : (s.t === 'w' ? (it.warmRest || 0) : (it.rest || 0));
       const allDone = S.active.items.every(i => i.sets.every(x => x.done));
       if (sec > 0 && !allDone) startTimer(sec); else stopTimer();
       const nx = it.sets.find((x, i) => i > +el.dataset.s && !x.done && x.t === s.t);
@@ -942,20 +977,29 @@ const A = {
     saveNow(); render();
   },
   stype: el => { const s = sIt(el).sets[+el.dataset.s]; s.t = s.t === 'w' ? 'n' : 'w'; saveNow(); render(); },
-  sadd: el => { const it = sIt(el), l = it.sets.filter(s => s.t !== 'w').pop() || it.sets[it.sets.length - 1]; it.sets.push({ t: 'n', kg: l ? l.kg : '', reps: l ? l.reps : range(it.target)[0], rir: '', done: false }); saveNow(); render(); },
-  swadd: el => { const it = sIt(el), n = it.sets.filter(s => s.t === 'w').length, f = it.sets.find(s => s.t !== 'w'); it.sets.splice(n, 0, { t: 'w', kg: f && num(f.kg) > 0 ? roundStep(num(f.kg) * 0.5, S.settings.step) : '', reps: f ? f.reps : '', done: false }); saveNow(); render(); },
+  sadd: el => { const it = sIt(el), l = it.sets.filter(s => s.t !== 'w').pop() || it.sets[it.sets.length - 1], tw = itTpl(it).filter(x => x.t !== 'w')[0] || {}; it.sets.push({ t: 'n', kg: l ? l.kg : '', reps: l ? l.reps : range(tw.goal)[0], rir: '', goal: l ? l.goal : tw.goal, rest: l && l.rest != null ? l.rest : (tw.rest ?? S.settings.rest), done: false }); saveNow(); render(); },
+  swadd: el => { const it = sIt(el), n = it.sets.filter(s => s.t === 'w').length, f = it.sets.find(s => s.t !== 'w'), w0 = it.sets.find(s => s.t === 'w'); it.sets.splice(n, 0, { t: 'w', kg: f && num(f.kg) > 0 ? roundStep(num(f.kg) * 0.5, S.settings.step) : '', reps: f ? f.reps : '', rest: w0 && w0.rest != null ? w0.rest : S.settings.warmRest, done: false }); saveNow(); render(); },
   srem: el => { const it = sIt(el); let i = it.sets.length - 1; while (i >= 0 && it.sets[i].done) i--; if (i >= 0) it.sets.splice(i, 1); else toast('Nur offene Sätze können entfernt werden'); saveNow(); render(); },
-  sugg: el => { const it = sIt(el), b = lastSets(it.exId); let i = 0; it.sets.forEach(s => { if (s.t !== 'w' && !s.done) { const bs = b.work[i] || b.work[b.work.length - 1]; s.kg = (num(bs.kg) || 0) + S.settings.step; s.reps = range(it.target)[0]; i++; } }); saveNow(); render(); toast('+' + fmt(S.settings.step) + ' kg übernommen'); },
+  sugg: el => { const it = sIt(el), b = lastSets(it.exId); let i = 0; it.sets.forEach(s => { if (s.t !== 'w' && !s.done) { const bs = b.work[i] || b.work[b.work.length - 1]; s.kg = (num(bs.kg) || 0) + S.settings.step; s.reps = range(s.goal || it.target)[0]; i++; } }); saveNow(); render(); toast('+' + fmt(S.settings.step) + ' kg übernommen'); },
   exmenu: el => {
     const idx = +el.dataset.id, it = S.active.items[idx];
+    const restOf = t => { const x = it.sets.find(s => (s.t === 'w') === (t === 'w')); return x ? (x.rest ?? (t === 'w' ? it.warmRest : it.rest)) || 0 : 0; };
     modal(`<h3>${esc(exName(it.exId))}</h3><div class="list">
-      ${rowItem('Pause', stepper('sst', 'rest', mmss(it.rest), `data-i="${idx}"`))}
-      ${rowItem('Pause nach Aufwärmen', stepper('sst', 'warmRest', it.warmRest ? mmss(it.warmRest) : 'Aus', `data-i="${idx}"`))}</div>
+      ${rowItem('Pause Arbeitssätze', stepper('sst', 'n', mmss(restOf('n')), `data-i="${idx}"`), 'Gilt für alle Arbeitssätze heute')}
+      ${rowItem('Pause Aufwärmsätze', stepper('sst', 'w', restOf('w') ? mmss(restOf('w')) : 'Aus', `data-i="${idx}"`))}</div>
       <div class="two" style="margin-top:12px"><button class="btn" data-a="smove" data-i="${idx}" data-s="-1" ${idx === 0 ? 'disabled' : ''}>↑ Nach oben</button><button class="btn" data-a="smove" data-i="${idx}" data-s="1" ${idx === S.active.items.length - 1 ? 'disabled' : ''}>↓ Nach unten</button></div>
-      <button class="btn block" data-a="sexhist" data-id="${it.exId}" style="margin-top:8px">Verlauf ansehen</button>`,
+      <div class="two"><button class="btn" data-a="sexedit" data-id="${it.exId}">Name / Typ ändern</button><button class="btn" data-a="sexhist" data-id="${it.exId}">Verlauf</button></div>`,
       [{ l: 'Entfernen', c: 'danger', f: () => { S.active.items.splice(idx, 1); saveNow(); render(); } }, { l: 'Fertig', c: 'pri', f: () => render() }]);
   },
-  sst: el => { const idx = +el.dataset.i, it = S.active.items[idx], f = el.dataset.id; it[f] = Math.max(0, Math.min(600, (it[f] || 0) + 15 * +el.dataset.s)); saveNow(); A.exmenu({ dataset: { id: idx } }); },
+  sst: el => {
+    const idx = +el.dataset.i, it = S.active.items[idx], w = el.dataset.id === 'w';
+    const cur = (it.sets.find(s => (s.t === 'w') === w) || {}).rest ?? (w ? it.warmRest : it.rest) ?? 0;
+    const v = Math.max(0, Math.min(600, cur + 15 * +el.dataset.s));
+    it.sets.forEach(s => { if ((s.t === 'w') === w) s.rest = v; });
+    if (w) it.warmRest = v; else it.rest = v;
+    saveNow(); A.exmenu({ dataset: { id: idx } });
+  },
+  sexedit: el => exerciseEditor(el.dataset.id, () => render()),
   smove: el => { const a = S.active.items, i = +el.dataset.i, j = i + +el.dataset.s; [a[i], a[j]] = [a[j], a[i]]; saveNow(); closeModal(); render(); },
   sexhist: el => { closeModal(); go('exercise', el.dataset.id); },
   snote: el => {
@@ -1009,6 +1053,7 @@ document.addEventListener('change', e => {
 document.addEventListener('input', e => {
   const el = e.target, a = el.dataset.a;
   if (a === 'pname') { curPlan().name = el.value; $('#top h1').textContent = el.value || 'Neuer Plan'; saveSoon(); }
+  if (a === 'tgoal' && itemEditor.it) { itemEditor.it.sets[+el.dataset.s].goal = el.value.trim(); saveSoon(); }
   if (a === 'srir') { const s = sIt(el).sets[+el.dataset.s], v = num(el.value.trim()); s.rir = isFinite(v) ? Math.max(0, Math.min(10, Math.round(v))) : ''; saveSoon(); }
   if (a === 'skg' || a === 'sreps') {
     const s = sIt(el).sets[+el.dataset.s], f = a === 'skg' ? 'kg' : 'reps', v = el.value.trim();
