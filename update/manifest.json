@@ -1,5 +1,5 @@
 {
- "web": 10,
+ "web": 11,
  "minNative": 3,
  "files": [
   {
@@ -8,7 +8,7 @@
   },
   {
    "name": "app.js",
-   "sha256": "08aa48f31a001d1638459d5548eb148526d91d05f1c0c9ed94dd37c34b06d26e"
+   "sha256": "a5afdf2f1eb0b4782b29a778ede73e7fb9009d1617c4b096e817f352d2a854d4"
   },
   {
    "name": "index.html",
@@ -24,12 +24,12 @@
   },
   {
    "name": "version.json",
-   "sha256": "da7753f2612f0c55ef93dd9fdaf71bf2e35b15f38d3583e04729a854909b29f7"
+   "sha256": "86b1c8b37bff7667ed4a170d3a2abbec3a335991ddf7245dabb128f50816322c"
   }
  ],
  "apk": "GymLog.apk",
- "apkVersion": 6,
- "apkVersionName": "1.5",
- "apkSha256": "ddc0867d0a4c6562d5d39df51b2e0d16b8596214b824c68c8f40e150716ab51c",
- "notes": "Trainingsplan PPL, Top Set/Back-off, Progression, Wochen und Deload, Muskeln"
+ "apkVersion": 7,
+ "apkVersionName": "1.6",
+ "apkSha256": "8961a244463f0a2da5a70d3e7c7d3ab7ab36e0ae95ed754d31befec530f41297",
+ "notes": "Sicherung in privatem GitHub-Repo"
 }

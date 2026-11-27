@@ -13,6 +13,8 @@ import android.graphics.Color;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.os.SystemClock;
 import android.os.VibrationEffect;
 import android.os.Vibrator;
@@ -53,6 +55,12 @@ public class MainActivity extends Activity {
     private static final int REQ_BFILE = 14;
     private volatile String pendingBackup = null;
     private volatile boolean backupQueued = false;
+    private GitHubBackup gh;
+    private final Handler main = new Handler(Looper.getMainLooper());
+    private volatile boolean ghDirty = false;
+    private long ghLastPush = 0;
+    private static final long GH_INTERVAL = 2 * 60 * 1000L;
+    private final Runnable ghRun = () -> ghPushNow();
     private static final String DATA_FILE = "gymlog.json";
     private static final String BACKUP_NAME = "GymLog-Backup.json";
 
@@ -102,6 +110,7 @@ public class MainActivity extends Activity {
         });
         setContentView(root);
         updater = new Updater(this);
+        gh = new GitHubBackup(this);
         web.loadUrl(updater.startUrl());
 
         if (Build.VERSION.SDK_INT >= 33 &&
@@ -137,7 +146,25 @@ public class MainActivity extends Activity {
         });
     }
 
-    @Override protected void onPause() { super.onPause(); foreground = false; }
+    @Override protected void onPause() { super.onPause(); foreground = false; if (ghDirty) ghPushNow(); }
+
+    /** Aktuellen Stand nach GitHub (im Hintergrund) */
+    private void ghPushNow() {
+        main.removeCallbacks(ghRun);
+        if (!gh.configured()) return;
+        ghDirty = false; ghLastPush = System.currentTimeMillis();
+        io.execute(() -> {
+            String d = readValid(new File(getFilesDir(), DATA_FILE));
+            if (d != null && hasContent(d) && !gh.push(d)) ghDirty = true;
+        });
+    }
+    private void ghSchedule() {
+        if (!gh.configured()) return;
+        ghDirty = true;
+        long wait = Math.max(0, GH_INTERVAL - (System.currentTimeMillis() - ghLastPush));
+        main.removeCallbacks(ghRun);
+        main.postDelayed(ghRun, wait);
+    }
 
     @Override
     public void onBackPressed() {
@@ -261,6 +288,7 @@ public class MainActivity extends Activity {
             snapshot(d);
             writeToFile(d);
             writeToTree(d);
+            main.post(this::ghSchedule);
         });
     }
 
@@ -350,6 +378,34 @@ public class MainActivity extends Activity {
             String t = prefs.getString("tree", null);
             if (t == null) return "";
             return "Ordner " + Uri.decode(Uri.parse(t).getLastPathSegment()) + "|" + prefs.getLong("treeLast", 0) + "|";
+        }
+
+        @JavascriptInterface public String ghInfo() { return gh.info(); }
+
+        @JavascriptInterface public void ghConnect(String repo, String token) {
+            io.execute(() -> {
+                String err = gh.connect(repo, token);
+                if (err.isEmpty()) {
+                    // Gibt es dort schon eine Sicherung? Dann nicht überschreiben, sondern anbieten
+                    String remote = null;
+                    try { remote = gh.pull(); } catch (Exception ignored) {}
+                    String local = readValid(new File(getFilesDir(), DATA_FILE));
+                    boolean remoteHas = remote != null && hasContent(remote);
+                    if (!remoteHas || remote.equals(local)) main.post(MainActivity.this::ghPushNow);
+                    js("window.onGh && window.onGh(" + quote(remoteHas && !remote.equals(local) ? "exists" : "ok") + ")");
+                } else js("window.onGh && window.onGh(" + quote("err:" + err) + ")");
+            });
+        }
+
+        @JavascriptInterface public void ghDisconnect() { gh.disconnect(); }
+
+        @JavascriptInterface public void ghPush() { main.post(MainActivity.this::ghPushNow); }
+
+        @JavascriptInterface public void ghRestore() {
+            io.execute(() -> {
+                try { js("window.onImport && window.onImport(" + quote(gh.pull()) + ")"); }
+                catch (Exception e) { js("window.onGh && window.onGh(" + quote("err:Keine Sicherung im Repo gefunden oder keine Verbindung.") + ")"); }
+            });
         }
 
         @JavascriptInterface public void backupNow() {

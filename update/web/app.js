@@ -483,7 +483,7 @@ function planCard(p, today) {
     <div class="plan-a"><button class="iconbtn ghost" data-a="planmenu" data-id="${p.id}" aria-label="Menü">${IC.more}</button><button class="btn pri sm" data-a="start" data-id="${p.id}">Start</button></div></div>`;
 }
 function viewTraining() {
-  let h = apkBanner() + backupBanner() + restoreCard() + deloadReminder();
+  let h = apkBanner() + backupBanner() + deloadReminder();
   if (S.active) {
     const done = S.active.items.reduce((a, i) => a + i.sets.filter(s => s.done).length, 0), tot = S.active.items.reduce((a, i) => a + i.sets.length, 0);
     h += `<div class="notice ok tap" data-a="resume"><div class="ri" style="padding:0"><div class="ri-l"><b>Training läuft: ${esc(S.active.name)}</b><small>${done}/${tot} Sätze · <span id="elapsed2">${mmss((Date.now() - S.active.start) / 1000)}</span></small></div><div class="ri-c"><button class="btn pri sm">Weiter</button></div></div></div>`;
@@ -833,11 +833,15 @@ function viewWorkoutDetail(id) {
 function viewSettings() {
   const s = S.settings, vi = verInfo();
   const b = backupState();
-  let h = apkBanner() + `<div class="sec">Sicherung</div><div class="card">${backupStatusHtml(b)}
-    ${b.can ? `<button class="btn ${b.where && !b.err ? '' : 'pri'} block" data-a="pickbfile" style="margin-top:12px">${b.where ? 'Sicherungsdatei ändern' : 'Sicherung in Google Drive einrichten'}</button>
-    <div class="hint">Im Dialog links im Menü <b>Drive</b> wählen und speichern. Danach wird die Datei bei jeder Änderung automatisch aktualisiert. Sie liegt privat in deinem Google-Konto, bleibt beim Löschen der App erhalten und auch wenn du das Handy verlierst.</div>` : ''}
-    <div class="two"><button class="btn" data-a="export">Kopie exportieren</button><button class="btn" data-a="import">Wiederherstellen</button></div>
-    <div class="hint">Wiederherstellen: Sicherungsdatei auswählen (z.B. aus Drive). Ersetzt die Daten auf dem Handy.</div></div>
+  const g = ghState();
+  let h = apkBanner() + `<div class="sec">Sicherung</div><div class="card">${ghStatusHtml(g)}
+    ${g.can ? (g.repo ? `<div class="two"><button class="btn" data-a="ghpush">Jetzt sichern</button><button class="btn" data-a="ghrestore">Wiederherstellen</button></div>
+      <button class="btn block" data-a="ghoff" style="margin-top:8px">GitHub trennen</button>` : `<button class="btn pri block" data-a="ghsetup" style="margin-top:12px">Mit GitHub sichern</button>
+      <div class="hint">Deine Daten landen in einem <b>privaten</b> Repo in deinem GitHub-Konto. Jede Sicherung ist ein Commit, so bleiben alle früheren Stände erhalten. Funktioniert auch nach Handyverlust oder Neuinstallation.</div>`) : ''}
+  </div>
+  <div class="sec">Weitere Sicherung</div><div class="card">${backupStatusHtml(b)}
+    ${b.can ? `<button class="btn block" data-a="pickbfile" style="margin-top:12px">${b.where ? 'Sicherungsdatei ändern' : 'Zusätzlich in Google Drive sichern'}</button>` : ''}
+    <div class="two"><button class="btn" data-a="export">Kopie exportieren</button><button class="btn" data-a="import">Aus Datei laden</button></div></div>
   <div class="sec">Pausentimer</div><div class="card list">
     ${rowItem('Standardpause', stepper('tst', 'rest', mmss(s.rest)), 'Für neue Übungen im Plan')}
     ${rowItem('Pause nach Aufwärmen', stepper('tst', 'warmRest', s.warmRest ? mmss(s.warmRest) : 'Aus'))}
@@ -864,17 +868,58 @@ function backupState() {
 const hasData = () => S.weights.length || S.workouts.length || S.plans.length || S.exercises.length;
 function backupStatusHtml(b) {
   const n = `${plural(S.weights.length, "Gewichtseintrag", "Gewichtseinträge")} · ${plural(S.workouts.length, 'Training', 'Trainings')} · ${plural(S.plans.length, 'Plan', 'Pläne')}`;
-  if (!b.where) return `<div class="ri" style="padding:0"><div class="ri-l"><b class="warn">Noch keine Sicherung außerhalb des Handys</b><small>${n}</small></div></div>`;
+  if (!b.where) return `<div class="ri" style="padding:0"><div class="ri-l"><b>Google Drive / Datei</b><small>nicht eingerichtet (optional)</small></div></div>`;
   const t = b.last ? new Date(b.last).toLocaleString('de-DE', { dateStyle: 'short', timeStyle: 'short' }) : 'noch nicht';
-  return `<div class="ri" style="padding:0"><div class="ri-l"><b class="${b.err ? 'red' : 'acc'}">${b.err ? 'Sicherung fehlgeschlagen' : 'Gesichert ✓'}</b><small>${esc(b.where)} · zuletzt ${t}</small><small>${n}</small></div></div>`;
+  return `<div class="ri" style="padding:0"><div class="ri-l"><b class="${b.err ? 'red' : 'acc'}">${b.err ? 'Sicherung fehlgeschlagen' : 'Gesichert ✓'}</b><small>${esc(b.where)} · zuletzt ${t}</small></div></div>`;
 }
+function ghState() {
+  const can = NATIVE && !!Android.ghInfo;
+  let gi = ''; if (can) { try { gi = Android.ghInfo(); } catch (e) {} }
+  const [repo, last, err] = gi ? gi.split('|') : ['', 0, ''];
+  return { can, repo, last: +last || 0, err: err || '' };
+}
+function ghStatusHtml(g) {
+  const n = `${plural(S.weights.length, 'Gewichtseintrag', 'Gewichtseinträge')} · ${plural(S.workouts.length, 'Training', 'Trainings')} · ${plural(S.plans.length, 'Plan', 'Pläne')}`;
+  if (!g.can) return `<div class="ri" style="padding:0"><div class="ri-l"><b>GitHub</b><small>Bitte das App-Update installieren</small></div></div>`;
+  if (!g.repo) return `<div class="ri" style="padding:0"><div class="ri-l"><b class="warn">GitHub nicht verbunden</b><small>${n}</small></div></div>`;
+  const t = g.last ? new Date(g.last).toLocaleString('de-DE', { dateStyle: 'short', timeStyle: 'short' }) : 'noch nicht';
+  const bad = g.err && g.err !== 'offline';
+  return `<div class="ri" style="padding:0"><div class="ri-l"><b class="${bad ? 'red' : 'acc'}">${bad ? 'GitHub: ' + esc(g.err) : 'In GitHub gesichert ✓'}</b><small>${esc(g.repo)} (privat) · zuletzt ${t}${g.err === 'offline' ? ' · wartet auf Internet' : ''}</small><small>${n}</small></div></div>`;
+}
+function ghSetup() {
+  modal(`<h3>Mit GitHub sichern</h3>
+    <p class="info"><b>1.</b> Auf github.com ein neues Repo anlegen, z.B. <b>gym-daten</b>, und unbedingt <b>Private</b> wählen.</p>
+    <p class="info"><b>2.</b> Token erstellen: Profilbild → Settings → Developer settings → Personal access tokens → <b>Fine-grained tokens</b> → Generate new token. Repository access: <b>Only select repositories</b> → gym-daten. Permissions → Repository permissions → <b>Contents: Read and write</b>. Ablauf so lang wie möglich.</p>
+    <p class="info"><b>3.</b> Hier eintragen:</p>
+    <label class="lbl">Repo (besitzer/name)</label><input class="f" id="mGhR" placeholder="deinname/gym-daten" autocapitalize="off" autocorrect="off" spellcheck="false">
+    <label class="lbl">Token</label><input class="f" id="mGhT" type="password" placeholder="github_pat_…" autocapitalize="off" autocorrect="off" spellcheck="false">
+    <div class="hint">Der Token bleibt nur auf deinem Handy und wird nie mitgesichert. Öffentliche Repos lehnt die App ab, damit deine Daten privat bleiben.</div>`,
+    [{ l: 'Abbrechen' }, { l: 'Verbinden', c: 'pri', f: () => {
+      const r = $('#mGhR').value.trim(), t = $('#mGhT').value.trim();
+      if (!r || !t) { toast('Bitte Repo und Token eintragen'); return false; }
+      toast('Verbinde mit GitHub…'); Android.ghConnect(r, t);
+    } }]);
+}
+window.onGh = res => {
+  if (res === 'ok') { toast('Verbunden ✓ Ab jetzt wird automatisch in GitHub gesichert'); render(); return; }
+  if (res === 'exists') {
+    modal(`<h3>Sicherung gefunden</h3><p class="info">In diesem Repo liegt schon eine Sicherung. Willst du sie aufs Handy holen (z.B. nach Neuinstallation) oder mit dem aktuellen Stand vom Handy überschreiben?</p>`,
+      [{ l: 'Handy-Stand hochladen', f: () => { Android.ghPush(); toast('Wird hochgeladen…'); setTimeout(render, 4000); } }, { l: 'Wiederherstellen', c: 'pri', f: () => { Android.ghRestore(); return false; } }]);
+    render(); return;
+  }
+  const msg = String(res).replace(/^err:/, '');
+  modal(`<h3>Hat nicht geklappt</h3><p class="info">${esc(msg)}</p>`, [{ l: 'OK', c: 'pri' }]);
+};
 /** Hinweis oben, solange keine externe Sicherung läuft */
 function backupBanner() {
-  const b = backupState();
-  if (!b.can || !hasData() || (b.where && !b.err)) return '';
-  return `<div class="notice warn"><b>${b.err ? 'Sicherung fehlgeschlagen' : 'Sichere deine Daten'}</b>
-    <p>${b.err ? 'Die Sicherungsdatei konnte nicht geschrieben werden. Bitte neu einrichten.' : 'Damit nichts verloren geht, auch wenn du die App löschst oder das Handy verlierst: einmal eine Sicherung in Google Drive einrichten. Dauert 10 Sekunden.'}</p>
-    <button class="btn warnb block" data-a="pickbfile" style="margin-top:10px">Jetzt einrichten</button></div>`;
+  const g = ghState(), b = backupState();
+  const ghBad = g.repo && g.err && g.err !== 'offline';
+  if (ghBad) return `<div class="notice warn"><b>GitHub-Sicherung: ${esc(g.err)}</b><p>Bitte unter Mehr → Sicherung neu verbinden.</p></div>`;
+  if (!g.can || g.repo || (b.where && !b.err) || !(S.workouts.length || S.weights.length)) return '';
+  if (S.settings.bkSnooze && Date.now() < S.settings.bkSnooze) return '';
+  return `<div class="notice warn"><b>Sichere deine Daten in GitHub</b>
+    <p>Einmal einrichten, dann ist alles automatisch in einem privaten Repo gesichert, auch bei Handyverlust.</p>
+    <div class="two"><button class="btn warnb" data-a="ghsetup">Einrichten</button><button class="btn" data-a="bksnooze">Später</button></div></div>`;
 }
 /** Leere App (z.B. neu installiert): Wiederherstellen anbieten */
 function restoreCard() {
@@ -1101,6 +1146,11 @@ const A = {
   import: () => { if (NATIVE) Android.importFile(); else $('#fileIn').click(); },
   pickfolder: () => Android.pickBackupFolder(),
   pickbfile: () => { if (Android.pickBackupFile) Android.pickBackupFile(); },
+  ghsetup: () => ghSetup(),
+  ghpush: () => { Android.ghPush(); toast('Wird gesichert…'); setTimeout(render, 4000); },
+  ghrestore: () => modal('<h3>Aus GitHub wiederherstellen?</h3><p class="info">Holt den letzten Stand aus deinem Repo. Du siehst vorher, was drin ist.</p>', [{ l: 'Abbrechen' }, { l: 'Laden', c: 'pri', f: () => { Android.ghRestore(); } }]),
+  ghoff: () => modal('<h3>GitHub trennen?</h3><p class="info">Die Sicherung im Repo bleibt erhalten, es wird nur nicht mehr automatisch gesichert.</p>', [{ l: 'Abbrechen' }, { l: 'Trennen', c: 'danger', f: () => { Android.ghDisconnect(); render(); } }]),
+  bksnooze: () => { S.settings.bkSnooze = Date.now() + 14 * DAY; saveNow(); render(); },
   chkupd: () => { toast('Suche nach Updates…'); Android.checkUpdates(); },
   instupd: () => Android.installUpdate()
 };
