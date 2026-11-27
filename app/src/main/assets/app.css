@@ -101,3 +101,9 @@ tr.done .chk{background:var(--acc);color:#0b1a10}
 .planitem{background:var(--card);border-radius:var(--r);padding:12px;margin:10px 0}
 .iconbtn{border:0;background:var(--card2);border-radius:9px;width:36px;height:36px;font-size:16px;color:var(--mut)}
 p.info{font-size:14px;line-height:1.5;color:#c3c8d2;margin:8px 0}
+
+.sets input.rir{font-size:15px;color:var(--blue)}
+.sets th[data-a]{color:var(--blue)}
+.note{font-size:13px;background:var(--card2);border-radius:9px;padding:7px 10px;margin:0 0 8px;white-space:pre-wrap}
+textarea.f{width:100%;background:var(--card2);border:1px solid var(--line);border-radius:10px;padding:11px 12px;outline:none;resize:vertical;font:inherit;color:inherit}
+textarea.f:focus{border-color:var(--acc)}

@@ -13,7 +13,7 @@ const DEFAULTS = () => ({
   active: null,
   settings: {
     rest: 120, warmRest: true, warmRestSec: 60, step: 2.5,
-    vibrate: true, sound: true, keepAwake: true,
+    vibrate: true, sound: true, keepAwake: true, rir: true,
     deloadOn: false,
     deload: { weightPct: 10, repsPct: 20, setsPct: 40 },
     cycle: { start: null, firstBlock: 8, block: 6, lastDeloadEnd: null, deloadStart: null, count: 0 }
@@ -413,7 +413,8 @@ function viewPlanEdit(id) {
         <div><label class="l">Pause Arbeitssatz</label>${istep(it, 'rest', 15, true)}</div>
         <div><label class="l row between" style="display:flex">Pause Aufwärmen <label class="switch" style="transform:scale(.7);margin:-8px -8px -8px 0"><input type="checkbox" data-a="iwr" data-id="${it.id}" ${it.warmRest ? 'checked' : ''}><span></span></label></label>
           ${it.warmRest ? istep(it, 'warmRestSec', 15, true) : '<div class="stepper" style="justify-content:center;height:44px;color:var(--mut);font-size:13px">keine Pause</div>'}</div>
-      </div></div>`;
+      </div>
+      <label class="l">Notiz (dauerhaft, optional)</label><input class="f" data-a="inote" data-id="${it.id}" value="${esc(exNote(it.exId))}" placeholder="z.B. Sitz Stufe 4, enger Griff"></div>`;
   });
   h += `<button class="btn ghost block" data-a="iadd">+ Übung hinzufügen</button>
     <div class="grid2" style="margin-top:20px"><button class="btn ghost" data-a="pdup">Duplizieren</button><button class="btn danger" data-a="pdel">Plan löschen</button></div>
@@ -476,9 +477,12 @@ function startWorkout(planId) {
   go('session');
 }
 function keepAwake(on) { try { if (NATIVE) Android.keepScreenOn(on && S.settings.keepAwake); } catch (e) {} }
+const setTxt = s => `${fmt(num(s.kg)) || 0}×${s.reps}${s.rir !== '' && s.rir != null ? ' @' + s.rir : ''}`;
+const exNote = id => (S.exercises.find(e => e.id === id) || {}).note || '';
+function lastNote(exId) { const ws = S.workouts.slice().sort((a, b) => b.start - a.start); for (const w of ws) { const it = w.items.find(i => i.exId === exId); if (it) return it.note ? { w, note: it.note } : null; } return null; }
 function prevText(exId) {
   const b = lastSets(exId, true); if (!b) return 'Erstes Mal: trag Gewicht und Wdh. ein';
-  return `Zuletzt ${fdate(b.w.start, false)}${b.w.deload ? ' (Deload)' : ''}: ` + b.work.map(s => `${fmt(num(s.kg)) || 0}×${s.reps}`).join(' · ');
+  return `Zuletzt ${fdate(b.w.start, false)}${b.w.deload ? ' (Deload)' : ''}: ` + b.work.map(setTxt).join(' · ');
 }
 function suggestion(it, idx) {
   if (S.active.deload) return '';
@@ -499,30 +503,39 @@ function viewSession() {
   let h = `<div class="row between small" style="margin:2px 2px 6px"><span class="mut">${fdate(a.start)} · <span id="elapsed">${mmss((Date.now() - a.start) / 1000)}</span></span>
     <label class="row" style="gap:8px"><span class="${a.deload ? 'warn' : 'mut'}">Deload</span><label class="switch w" style="transform:scale(.8)"><input type="checkbox" data-a="sdeload" ${a.deload ? 'checked' : ''}><span></span></label></label></div>`;
   if (a.deload) h += `<div class="banner small" style="padding:10px 12px">Deload-Training: weniger Sätze, Wdh. und Gewicht sind schon eingerechnet. Locker bleiben, 3–4 Wdh. im Tank.</div>`;
+  const rirOn = S.settings.rir;
   a.items.forEach((it, idx) => {
     let wn = 0, nn = 0;
     h += `<div class="ex"><div class="row"><h3 class="grow">${esc(exName(it.exId))}</h3><span class="small mut">${esc(it.reps)} Wdh · ${mmss(it.rest)}</span><button class="iconbtn" data-a="exmenu" data-id="${idx}">⋯</button></div>
-      <div class="hint">${esc(prevText(it.exId))}</div>${suggestion(it, idx)}
-      <table class="sets"><tr><th style="width:42px">Satz</th><th>kg</th><th>Wdh.</th><th style="width:50px"></th></tr>`;
+      <div class="hint">${esc(prevText(it.exId))}</div>${notesHtml(it)}${suggestion(it, idx)}
+      <table class="sets"><tr><th style="width:42px">Satz</th><th>kg</th><th>Wdh.</th>${rirOn ? '<th style="width:58px" data-a="ririnfo">RIR ⓘ</th>' : ''}<th style="width:50px"></th></tr>`;
     it.sets.forEach((s, si) => {
       const lab = s.t === 'w' ? 'W' + (++wn > 1 ? wn : '') : ++nn;
       h += `<tr class="${s.t === 'w' ? 'w' : ''} ${s.done ? 'done' : ''}"><td><button class="badge" data-a="stype" data-id="${idx}" data-s="${si}">${lab}</button></td>
         <td><input inputmode="decimal" data-a="skg" data-id="${idx}" data-s="${si}" value="${s.kg === '' ? '' : fmt(num(s.kg), 2)}" placeholder="0"></td>
         <td><input inputmode="numeric" data-a="sreps" data-id="${idx}" data-s="${si}" value="${s.reps}" placeholder="0"></td>
+        ${rirOn ? (s.t === 'w' ? '<td></td>' : `<td><input class="rir" inputmode="numeric" maxlength="2" data-a="srir" data-id="${idx}" data-s="${si}" value="${s.rir ?? ''}" placeholder="–"></td>`) : ''}
         <td><button class="chk" data-a="sdone" data-id="${idx}" data-s="${si}">✓</button></td></tr>`;
     });
-    h += `</table><div class="row" style="margin-top:8px;gap:6px"><button class="btn sm ghost" data-a="sadd" data-id="${idx}">+ Satz</button><button class="btn sm ghost" data-a="swadd" data-id="${idx}">+ Aufwärmen</button><span class="grow"></span><button class="btn sm ghost" data-a="srem" data-id="${idx}">− Satz</button></div></div>`;
+    h += `</table><div class="row" style="margin-top:8px;gap:6px"><button class="btn sm ghost" data-a="sadd" data-id="${idx}">+ Satz</button><button class="btn sm ghost" data-a="swadd" data-id="${idx}">+ Aufwärmen</button><button class="btn sm ghost" data-a="snote" data-id="${idx}">Notiz</button><span class="grow"></span><button class="btn sm ghost" data-a="srem" data-id="${idx}">− Satz</button></div></div>`;
   });
   h += `<button class="btn ghost block" data-a="sexadd">+ Übung hinzufügen</button>
     <button class="btn pri block" style="margin-top:14px" data-a="finish">Training beenden</button>
     <button class="btn danger block" style="margin-top:10px" data-a="discard">Training verwerfen</button><div style="height:30px"></div>`;
   return [a.name, h, ''];
 }
+function notesHtml(it) {
+  let h = '';
+  const n = exNote(it.exId); if (n) h += `<div class="note tap" data-a="snote" data-id="${S.active.items.indexOf(it)}">📌 ${esc(n)}</div>`;
+  if (it.note) h += `<div class="note tap" data-a="snote" data-id="${S.active.items.indexOf(it)}">📝 Heute: ${esc(it.note)}</div>`;
+  else { const l = lastNote(it.exId); if (l) h += `<div class="note mut">📝 ${fdate(l.w.start, false)}: ${esc(l.note)}</div>`; }
+  return h;
+}
 function finishWorkout() {
   const a = S.active;
   const undone = a.items.reduce((n, i) => n + i.sets.filter(s => !s.done && (num(s.reps) > 0)).length, 0);
   const doFinish = includeUndone => {
-    const items = a.items.map(i => ({ exId: i.exId, sets: i.sets.filter(s => (s.done || includeUndone) && num(s.reps) > 0).map(s => ({ t: s.t, kg: isFinite(num(s.kg)) ? num(s.kg) : 0, reps: num(s.reps) })) })).filter(i => i.sets.length);
+    const items = a.items.map(i => { const o = { exId: i.exId, sets: i.sets.filter(s => (s.done || includeUndone) && num(s.reps) > 0).map(s => { const r = { t: s.t, kg: isFinite(num(s.kg)) ? num(s.kg) : 0, reps: num(s.reps) }; if (s.t !== 'w' && isFinite(num(s.rir))) r.rir = num(s.rir); return r; }) }; if (i.note) o.note = i.note; return o; }).filter(i => i.sets.length);
     if (!items.length) { toast('Keine Sätze erledigt. Training verworfen.'); S.active = null; stopTimer(); keepAwake(false); saveNow(); stack = []; tab = 'training'; render(true); return; }
     const prs = items.map(i => { const before = bestE1rm(i.exId); const now = Math.max(...i.sets.filter(s => s.t !== 'w').map(s => e1rm(s.kg, s.reps)), 0); return before > 0 && now > before ? exName(i.exId) : null; }).filter(Boolean);
     const w = { id: a.id, planId: a.planId, name: a.name, start: a.start, end: Date.now(), deload: a.deload, items };
@@ -644,7 +657,7 @@ function viewExercise(id) {
   h += '<h2>Alle Einheiten</h2><div class="card list">';
   pts.slice().reverse().forEach(p => {
     h += `<div class="it tap" data-a="wdetail" data-id="${p.w.id}"><div class="grow"><div class="small"><b>${fdate(p.w.start)}</b> ${p.w.deload ? '<span class="pill d">Deload</span>' : ''}</div>
-      <div class="small mut">${p.work.map(s => fmt(s.kg) + '×' + s.reps).join(' · ')}</div></div><div class="small mut">${fmt(p.e1rm, 0)}</div></div>`;
+      <div class="small mut">${p.work.map(setTxt).join(' · ')}</div></div><div class="small mut">${fmt(p.e1rm, 0)}</div></div>`;
   });
   h += '</div>';
   return [exName(id), h, `<button class="btn sm ghost" data-a="exrename" data-id="${id}">Umbenennen</button>`];
@@ -655,11 +668,12 @@ function viewWorkoutDetail(id) {
   let h = `<div class="small mut" style="margin:4px 2px">${fdate(w.start)} · ${new Date(w.start).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })} · ${Math.round((w.end - w.start) / 60000)} min ${w.deload ? '<span class="pill d">Deload</span>' : ''}</div>`;
   w.items.forEach((it, ii) => {
     let wn = 0, nn = 0;
-    h += `<div class="ex"><h3 class="tap" data-a="exdetail" data-id="${it.exId}">${esc(exName(it.exId))} <span class="mut">›</span></h3><table class="sets"><tr><th style="width:42px">Satz</th><th>kg</th><th>Wdh.</th><th>1RM≈</th></tr>`;
+    h += `<div class="ex"><h3 class="tap" data-a="exdetail" data-id="${it.exId}">${esc(exName(it.exId))} <span class="mut">›</span></h3>${exNote(it.exId) ? `<div class="note">📌 ${esc(exNote(it.exId))}</div>` : ''}${it.note ? `<div class="note">📝 ${esc(it.note)}</div>` : ''}<table class="sets"><tr><th style="width:42px">Satz</th><th>kg</th><th>Wdh.</th><th style="width:58px">RIR</th><th style="width:44px">1RM≈</th></tr>`;
     it.sets.forEach((s, si) => {
       h += `<tr class="${s.t === 'w' ? 'w' : ''}"><td><span class="badge">${s.t === 'w' ? 'W' : ++nn}</span></td>
         <td><input inputmode="decimal" data-a="hkg" data-id="${w.id}" data-i="${ii}" data-s="${si}" value="${fmt(s.kg, 2)}"></td>
         <td><input inputmode="numeric" data-a="hreps" data-id="${w.id}" data-i="${ii}" data-s="${si}" value="${s.reps}"></td>
+        <td>${s.t === 'w' ? '' : `<input class="rir" inputmode="numeric" data-a="hrir" data-id="${w.id}" data-i="${ii}" data-s="${si}" value="${s.rir ?? ''}" placeholder="–">`}</td>
         <td class="small mut">${s.t === 'w' ? '' : fmt(e1rm(s.kg, s.reps), 0)}</td></tr>`;
     });
     h += '</table></div>';
@@ -677,7 +691,7 @@ function viewSettings() {
   const sw = (k, label, sub) => `<div class="it"><div class="grow">${label}${sub ? `<div class="small mut">${sub}</div>` : ''}</div><label class="switch"><input type="checkbox" data-a="sset" data-id="${k}" ${s[k] ? 'checked' : ''}><span></span></label></div>`;
   let h = `<h2>Pausentimer</h2><div class="card">
     <div class="grid2"><div><label class="l">Standard Arbeitssatz</label>${tstep('rest', s.rest)}</div><div><label class="l">Standard Aufwärmen</label>${tstep('warmRestSec', s.warmRestSec)}</div></div>
-    <div class="list" style="margin-top:6px">${sw('warmRest', 'Pause nach Aufwärmsätzen', 'Standard für neue Übungen')}${sw('vibrate', 'Vibration')}${sw('sound', 'Ton')}${sw('keepAwake', 'Bildschirm im Training anlassen')}</div>
+    <div class="list" style="margin-top:6px">${sw('warmRest', 'Pause nach Aufwärmsätzen', 'Standard für neue Übungen')}${sw('vibrate', 'Vibration')}${sw('sound', 'Ton')}${sw('keepAwake', 'Bildschirm im Training anlassen')}${sw('rir', 'RIR erfassen', 'Spalte für Wiederholungen im Tank')}</div>
     <div class="small mut">Pausen pro Übung stellst du im Plan ein.</div></div>
   <h2>Training</h2><div class="card"><label class="l">Gewichtsschritte (für Vorschläge & Deload-Rundung)</label>
     <div class="chips">${[1, 1.25, 2, 2.5, 5].map(v => `<button class="chip ${s.step === v ? 'on' : ''}" data-a="stepkg" data-id="${v}">${fmt(v, 2)} kg</button>`).join('')}</div>
@@ -689,7 +703,7 @@ function viewSettings() {
     <button class="btn ${bname ? 'ghost' : 'pri'} block" data-a="pickfolder">${bname ? 'Ordner ändern' : 'Sicherungsordner wählen'}</button>`;
   h += `<div class="grid2" style="margin-top:8px"><button class="btn ghost" data-a="export">Exportieren</button><button class="btn ghost" data-a="import">Importieren</button></div>
     <div class="small mut" style="margin-top:8px">Import ersetzt alle aktuellen Daten durch die der Datei.</div></div>
-  <div class="small mut" style="text-align:center;margin:24px 0 8px">GymLog 1.0</div>`;
+  <div class="small mut" style="text-align:center;margin:24px 0 8px">GymLog 1.1</div>`;
   return ['Einstellungen', h];
 }
 function tstep(k, v) { return `<div class="stepper"><button data-a="tst" data-id="${k}" data-s="-15">−</button><input readonly value="${mmss(v)}"><button data-a="tst" data-id="${k}" data-s="15">+</button></div>`; }
@@ -785,6 +799,16 @@ const A = {
       [{ l: 'Verlauf', f: () => { closeModal(); go('exercise', it.exId); } }, idx > 0 ? { l: '↑ Hoch', f: () => { const a = S.active.items; [a[idx - 1], a[idx]] = [a[idx], a[idx - 1]]; saveNow(); render(); } } : null,
        { l: 'Entfernen', c: 'danger', f: () => { S.active.items.splice(idx, 1); saveNow(); render(); } }]);
   },
+  snote: el => {
+    const it = S.active.items[+el.dataset.id], e = S.exercises.find(x => x.id === it.exId);
+    modal(`<h3>Notizen · ${esc(e.name)}</h3>
+      <label class="l">Dauerhafte Notiz (z.B. Sitz Stufe 4, Griffbreite)</label><textarea class="f" id="mN1" rows="2">${esc(e.note || '')}</textarea>
+      <label class="l">Notiz nur für heute (z.B. Schulter zwickt)</label><textarea class="f" id="mN2" rows="2">${esc(it.note || '')}</textarea>`,
+      [{ l: 'Abbrechen' }, { l: 'Speichern', c: 'pri', f: () => { e.note = $('#mN1').value.trim(); it.note = $('#mN2').value.trim(); saveNow(); render(); } }]);
+  },
+  ririnfo: () => modal(`<h3>RIR: Wiederholungen im Tank</h3><p class="info">Wie viele saubere Wiederholungen hättest du noch geschafft?</p>
+    <div class="kv"><span><b>0</b></span><span class="mut">Muskelversagen, nichts ging mehr</span></div><div class="kv"><span><b>1</b></span><span class="mut">noch 1 Wdh. drin</span></div><div class="kv"><span><b>2</b></span><span class="mut">noch 2 Wdh. drin</span></div><div class="kv"><span><b>3–4</b></span><span class="mut">locker (Deload, Wiedereinstieg)</span></div>
+    <p class="info">Für Muskelaufbau sind meist <b>0–3 RIR</b> bei Arbeitssätzen ideal. Am Anfang deines Wiedereinstiegs eher 2–4. Das Feld ist freiwillig.</p>`, [{ l: 'OK', c: 'pri' }]),
   sst: el => { const it = S.active.items[+el.dataset.id], f = el.dataset.f; let v = (f === 'warmRestSec' && !it.warmRest ? 0 : it[f]) + (+el.dataset.s); v = Math.max(0, Math.min(600, v)); it[f] = v; if (f === 'warmRestSec') it.warmRest = v > 0; el.parentNode.querySelector('input').value = mmss(v); saveNow(); render(); },
   sexadd: () => pickExercise(e => { S.active.items.push(buildItem(newItem(e.id), S.active.deload)); saveNow(); render(); setTimeout(() => { const v = $('#view'); v.scrollTop = v.scrollHeight; }, 30); }),
   mexpick: el => { $('#mEx').value = el.dataset.id; },
@@ -820,12 +844,17 @@ document.addEventListener('change', e => {
   if (a === 'cyclestart') { S.settings.cycle.start = el.value || null; saveNow(); render(); }
   if (a === 'stpin') { setPath(el.dataset.id, parseInt(el.value) || 0); saveNow(); render(); }
   if (a === 'iname') { const it = curPlan().items.find(i => i.id === el.dataset.id); const ex = exByName(el.value); if (ex) { it.exId = ex.id; saveNow(); } else { el.value = exName(it.exId); } }
-  if (a === 'hkg' || a === 'hreps') { const w = S.workouts.find(x => x.id === el.dataset.id); const s = w.items[+el.dataset.i].sets[+el.dataset.s]; const v = num(el.value); if (isFinite(v) && v >= 0) { s[a === 'hkg' ? 'kg' : 'reps'] = v; saveNow(); } }
+  if (a === 'hkg' || a === 'hreps' || a === 'hrir') { const w = S.workouts.find(x => x.id === el.dataset.id); const s = w.items[+el.dataset.i].sets[+el.dataset.s]; const v = num(el.value); const f = { hkg: 'kg', hreps: 'reps', hrir: 'rir' }[a]; if (a === 'hrir' && el.value.trim() === '') { delete s.rir; saveNow(); } else if (isFinite(v) && v >= 0) { s[f] = v; saveNow(); } }
 });
 document.addEventListener('input', e => {
   const el = e.target; const a = el.dataset.a;
   if (a === 'pname') { curPlan().name = el.value; $('#top h1').textContent = el.value || 'Neuer Plan'; saveSoon(); }
   if (a === 'ireps') { curPlan().items.find(i => i.id === el.dataset.id).reps = el.value; saveSoon(); }
+  if (a === 'srir') {
+    const s = S.active.items[+el.dataset.id].sets[+el.dataset.s]; const v = num(el.value.trim());
+    s.rir = isFinite(v) ? Math.max(0, Math.min(10, Math.round(v))) : ''; saveSoon();
+  }
+  if (a === 'inote') { const it = curPlan().items.find(i => i.id === el.dataset.id); const e = S.exercises.find(x => x.id === it.exId); if (e) { e.note = el.value; saveSoon(); } }
   if (a === 'skg' || a === 'sreps') {
     const s = S.active.items[+el.dataset.id].sets[+el.dataset.s];
     const v = el.value.trim(); s[a === 'skg' ? 'kg' : 'reps'] = v === '' ? '' : (isFinite(num(v)) ? num(v) : s[a === 'skg' ? 'kg' : 'reps']);

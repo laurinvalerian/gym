@@ -9,7 +9,7 @@ Updates einfach drüber installieren, die Daten bleiben erhalten (gleicher Signa
 ## Funktionen
 * Körpergewicht: täglicher Eintrag, Wochenschnitt, Veränderung zur Vorwoche, Trend, Diagramm
 * Trainingspläne: beliebig viele, Aufwärm und Arbeitssätze, Wiederholungsbereich, Pausen pro Übung
-* Training: Werte vom letzten Mal vorausgefüllt, Steigerungsvorschlag (+kg), Pausentimer mit Benachrichtigung
+* Training: RIR pro Satz, Notizen pro Übung (dauerhaft und für heute), Werte vom letzten Mal vorausgefüllt, Steigerungsvorschlag (+kg), Pausentimer mit Benachrichtigung
 * Deload: Schalter, automatische Berechnung (Sätze, Wdh., Gewicht), Empfehlung wann der nächste fällig ist
 * Verlauf: alle Trainings, Entwicklung jeder Übung (1RM, Top Gewicht, Volumen, Wdh.)
 * Sicherung: Auto Backup in einen Ordner deiner Wahl, Export/Import als JSON, Android Cloud Backup
