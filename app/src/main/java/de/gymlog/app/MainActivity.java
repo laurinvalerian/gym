@@ -18,6 +18,10 @@ import android.os.VibrationEffect;
 import android.os.Vibrator;
 import android.provider.DocumentsContract;
 import android.view.View;
+import android.view.WindowInsets;
+import android.widget.FrameLayout;
+import android.provider.Settings;
+import org.json.JSONObject;
 import android.view.WindowManager;
 import android.webkit.JavascriptInterface;
 import android.webkit.WebChromeClient;
@@ -53,6 +57,10 @@ public class MainActivity extends Activity {
     private String pendingExport;
     private final ExecutorService io = Executors.newSingleThreadExecutor();
     private SharedPreferences prefs;
+    private Updater updater;
+    private volatile JSONObject pendingManifest;
+    private volatile boolean checking = false;
+    private long lastCheck = 0;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -72,8 +80,26 @@ public class MainActivity extends Activity {
         web.setWebViewClient(new WebViewClient());
         web.setWebChromeClient(new WebChromeClient());
         web.addJavascriptInterface(new Bridge(), "Android");
-        setContentView(web);
-        web.loadUrl("file:///android_asset/index.html");
+        // Systemleisten (Statusleiste oben, Navigationsleiste unten, Tastatur) freihalten
+        FrameLayout root = new FrameLayout(this);
+        root.setBackgroundColor(Color.parseColor("#0F1115"));
+        root.addView(web, new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
+        root.setOnApplyWindowInsetsListener((v, insets) -> {
+            int top, bottom, left, right;
+            if (Build.VERSION.SDK_INT >= 30) {
+                android.graphics.Insets b = insets.getInsets(WindowInsets.Type.systemBars() | WindowInsets.Type.displayCutout());
+                android.graphics.Insets ime = insets.getInsets(WindowInsets.Type.ime());
+                top = b.top; left = b.left; right = b.right; bottom = Math.max(b.bottom, ime.bottom);
+            } else {
+                top = insets.getSystemWindowInsetTop(); bottom = insets.getSystemWindowInsetBottom();
+                left = insets.getSystemWindowInsetLeft(); right = insets.getSystemWindowInsetRight();
+            }
+            v.setPadding(left, top, right, bottom);
+            return insets;
+        });
+        setContentView(root);
+        updater = new Updater(this);
+        web.loadUrl(updater.startUrl());
 
         if (Build.VERSION.SDK_INT >= 33 &&
                 checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
@@ -81,7 +107,33 @@ public class MainActivity extends Activity {
         }
     }
 
-    @Override protected void onResume() { super.onResume(); foreground = true; js("window.onAppResume && window.onAppResume()"); }
+    @Override protected void onResume() {
+        super.onResume(); foreground = true;
+        js("window.onAppResume && window.onAppResume()");
+        if (System.currentTimeMillis() - lastCheck > 30 * 60 * 1000L) checkUpdates(false);
+    }
+
+    /** Prüft online auf neue Version. Ohne Internet passiert einfach nichts. */
+    private void checkUpdates(boolean manual) {
+        if (checking) return;
+        checking = true;
+        io.execute(() -> {
+            try {
+                JSONObject m = updater.manifest();
+                lastCheck = System.currentTimeMillis();
+                int web = 0;
+                try { web = updater.updateWeb(m); } catch (Exception e) { if (manual) js("window.onNative && window.onNative('updateError')"); }
+                if (web > 0) js("window.onUpdateReady && window.onUpdateReady(" + web + ")");
+                if (m.optLong("apkVersion", 0) > updater.nativeVersion()) {
+                    pendingManifest = m;
+                    js("window.onApkUpdate && window.onApkUpdate(" + quote(m.optString("apkVersionName", "")) + "," + quote(m.optString("notes", "")) + ")");
+                } else if (manual && web == 0) js("window.onNative && window.onNative('upToDate')");
+            } catch (Exception e) {
+                if (manual) js("window.onNative && window.onNative('offline')");
+            } finally { checking = false; }
+        });
+    }
+
     @Override protected void onPause() { super.onPause(); foreground = false; }
 
     @Override
@@ -256,6 +308,31 @@ public class MainActivity extends Activity {
             runOnUiThread(() -> {
                 if (on) getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
                 else getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+            });
+        }
+
+        @JavascriptInterface public String versionInfo() {
+            String name = "";
+            try { name = getPackageManager().getPackageInfo(getPackageName(), 0).versionName; } catch (Exception ignored) {}
+            return name + "|" + updater.currentWeb();
+        }
+
+        @JavascriptInterface public void checkUpdates() { MainActivity.this.checkUpdates(true); }
+
+        @JavascriptInterface public void reloadApp() { runOnUiThread(() -> web.loadUrl(updater.startUrl())); }
+
+        @JavascriptInterface public void installUpdate() {
+            if (!getPackageManager().canRequestPackageInstalls()) {
+                js("window.onNative && window.onNative('needInstallPermission')");
+                runOnUiThread(() -> startActivity(new Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:" + getPackageName()))));
+                return;
+            }
+            JSONObject m = pendingManifest;
+            if (m == null) { MainActivity.this.checkUpdates(true); return; }
+            js("window.onNative && window.onNative('downloading')");
+            io.execute(() -> {
+                try { updater.installApk(m); }
+                catch (Exception e) { js("window.onNative && window.onNative('updateError')"); }
             });
         }
 

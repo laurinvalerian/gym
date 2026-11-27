@@ -136,6 +136,7 @@ function render(resetScroll) {
     .map(([k, l, i]) => `<button class="${tab === k && !stack.length ? 'on' : ''}" data-a="tab" data-id="${k}">${i}<span>${l}</span></button>`).join('');
   view.querySelectorAll('.chart[data-chart]').forEach(drawChartInto);
   renderTimer();
+  if (pendingReload) setTimeout(maybeReload, 300);
 }
 
 // ---------- Charts (SVG, offline) ----------
@@ -356,7 +357,7 @@ function getPath(path) { const [a, b] = path.split('.'); return b ? S.settings[a
 // ---------- Training: Pläne ----------
 function lastDone(planId) { const w = S.workouts.filter(w => w.planId === planId).sort((a, b) => b.start - a.start)[0]; return w ? w.start : null; }
 function viewTraining() {
-  let h = '';
+  let h = apkBanner();
   if (S.active) {
     const done = S.active.items.reduce((a, i) => a + i.sets.filter(s => s.done).length, 0), tot = S.active.items.reduce((a, i) => a + i.sets.length, 0);
     h += `<div class="banner g tap" data-a="resume"><div class="row"><div class="grow"><b>Training läuft: ${esc(S.active.name)}</b><div class="small mut">${done}/${tot} Sätze · seit ${mmss((Date.now() - S.active.start) / 1000)} min</div></div><button class="btn pri sm">Weiter</button></div></div>`;
@@ -688,6 +689,7 @@ function viewSettings() {
   let bi = '';
   if (NATIVE) { try { bi = Android.backupInfo(); } catch (e) {} }
   const [bname, blast] = bi ? bi.split('|') : ['', 0];
+  const vi = verInfo();
   const sw = (k, label, sub) => `<div class="it"><div class="grow">${label}${sub ? `<div class="small mut">${sub}</div>` : ''}</div><label class="switch"><input type="checkbox" data-a="sset" data-id="${k}" ${s[k] ? 'checked' : ''}><span></span></label></div>`;
   let h = `<h2>Pausentimer</h2><div class="card">
     <div class="grid2"><div><label class="l">Standard Arbeitssatz</label>${tstep('rest', s.rest)}</div><div><label class="l">Standard Aufwärmen</label>${tstep('warmRestSec', s.warmRestSec)}</div></div>
@@ -703,7 +705,10 @@ function viewSettings() {
     <button class="btn ${bname ? 'ghost' : 'pri'} block" data-a="pickfolder">${bname ? 'Ordner ändern' : 'Sicherungsordner wählen'}</button>`;
   h += `<div class="grid2" style="margin-top:8px"><button class="btn ghost" data-a="export">Exportieren</button><button class="btn ghost" data-a="import">Importieren</button></div>
     <div class="small mut" style="margin-top:8px">Import ersetzt alle aktuellen Daten durch die der Datei.</div></div>
-  <div class="small mut" style="text-align:center;margin:24px 0 8px">GymLog 1.1</div>`;
+  <h2>App</h2><div class="card">${apkBanner()}<div class="kv"><span class="mut">Version</span><b>${esc(vi.name)}${vi.web ? ' · Stand ' + vi.web : ''}</b></div>
+    <p class="small mut">Die App funktioniert komplett offline. Sobald du Internet hast, sucht sie selbst nach der neuesten Version und aktualisiert sich automatisch.</p>
+    ${NATIVE ? '<button class="btn ghost block" data-a="chkupd">Jetzt nach Updates suchen</button>' : ''}</div>
+  <div style="height:16px"></div>`;
   return ['Einstellungen', h];
 }
 function tstep(k, v) { return `<div class="stepper"><button data-a="tst" data-id="${k}" data-s="-15">−</button><input readonly value="${mmss(v)}"><button data-a="tst" data-id="${k}" data-s="15">+</button></div>`; }
@@ -718,8 +723,21 @@ window.onImport = text => {
   modal(`<h3>Backup importieren?</h3><p class="info">${d.weights.length} Gewichtseinträge, ${d.workouts.length} Trainings, ${(d.plans || []).length} Pläne. Deine aktuellen Daten werden ersetzt.</p>`,
     [{ l: 'Abbrechen' }, { l: 'Importieren', c: 'pri', f: () => { S = merge(DEFAULTS(), d); saveNow(); stack = []; render(true); toast('Import erfolgreich'); } }]);
 };
+// ---------- Updates ----------
+let apkUpd = null, pendingReload = false;
+function verInfo() { try { if (NATIVE && Android.versionInfo) { const [n, w] = Android.versionInfo().split('|'); return { name: n, web: +w }; } } catch (e) {} return { name: 'Web', web: 0 }; }
+function safeToReload() { return !S.active && $('#modal').classList.contains('hidden') && !(document.activeElement && document.activeElement.matches('input,textarea')); }
+function doReload() { saveNow(); try { Android.reloadApp(); } catch (e) { location.reload(); } }
+window.onUpdateReady = v => { if (safeToReload()) doReload(); else pendingReload = true; };
+window.onApkUpdate = (name, notes) => { apkUpd = { name, notes }; if (!topView() || topView().v !== 'session') render(); };
+function maybeReload() { if (pendingReload && safeToReload()) { pendingReload = false; doReload(); } }
+function apkBanner() {
+  if (!apkUpd) return '';
+  return `<div class="banner g"><div class="row"><div class="grow"><b>App-Update ${esc(apkUpd.name)} verfügbar</b>${apkUpd.notes ? `<div class="small mut">${esc(apkUpd.notes)}</div>` : ''}<div class="tiny mut">Deine Daten bleiben erhalten.</div></div><button class="btn pri sm" data-a="instupd">Installieren</button></div></div>`;
+}
+
 window.onNative = ev => {
-  const m = { exported: 'Export gespeichert', exportError: 'Export fehlgeschlagen', importError: 'Datei konnte nicht gelesen werden', folderSet: 'Sicherungsordner eingerichtet', folderError: 'Ordner konnte nicht gesetzt werden' };
+  const m = { upToDate: 'Du hast die neueste Version', offline: 'Keine Internetverbindung', updateError: 'Update fehlgeschlagen, später nochmal', needInstallPermission: 'Bitte „Apps aus dieser Quelle zulassen“ aktivieren und dann nochmal auf Installieren tippen', downloading: 'Update wird geladen…', exported: 'Export gespeichert', exportError: 'Export fehlgeschlagen', importError: 'Datei konnte nicht gelesen werden', folderSet: 'Sicherungsordner eingerichtet', folderError: 'Ordner konnte nicht gesetzt werden' };
   toast(m[ev] || ev);
   if (ev === 'folderSet') { saveNow(); setTimeout(render, 800); }
 };
@@ -734,7 +752,7 @@ function modal(html, btns) {
   m.innerHTML = `<div class="sheet">${html}<div class="btns">${modalBtns.map((b, i) => `<button class="btn ${b.c || ''}" data-a="mbtn" data-id="${i}">${esc(b.l)}</button>`).join('')}</div></div>`;
   m.classList.remove('hidden');
 }
-function closeModal() { $('#modal').classList.add('hidden'); $('#modal').innerHTML = ''; }
+function closeModal() { $('#modal').classList.add('hidden'); $('#modal').innerHTML = ''; if (pendingReload) setTimeout(maybeReload, 300); }
 $('#modal').addEventListener('click', e => { if (e.target.id === 'modal') closeModal(); });
 
 // ---------- Aktionen ----------
@@ -829,7 +847,9 @@ const A = {
   stepkg: el => { S.settings.step = +el.dataset.id; saveNow(); render(); },
   export: () => exportData(),
   import: () => { if (NATIVE) Android.importFile(); else $('#fileIn').click(); },
-  pickfolder: () => Android.pickBackupFolder()
+  pickfolder: () => Android.pickBackupFolder(),
+  chkupd: () => { toast('Suche nach Updates…'); Android.checkUpdates(); },
+  instupd: () => Android.installUpdate()
 };
 function tstepS(idx, f, v) { return `<div class="stepper"><button data-a="sst" data-id="${idx}" data-f="${f}" data-s="-15">−</button><input readonly value="${mmss(v)}"><button data-a="sst" data-id="${idx}" data-f="${f}" data-s="15">+</button></div>`; }
 
@@ -870,4 +890,5 @@ if (S.active) { stack = [{ v: 'session' }]; tab = 'training'; keepAwake(true); }
 else if (!S.weights.some(w => w.d === dkey()) && new Date().getHours() < 12) tab = 'weight';
 else tab = 'training';
 render(true);
+(() => { const v = verInfo().web; let last = 0; try { last = +localStorage.getItem('webVer') || 0; localStorage.setItem('webVer', v); } catch (e) {} if (last && v > last) toast('App aktualisiert ✓'); })();
 window.addEventListener('resize', () => document.querySelectorAll('.chart[data-chart]').forEach(drawChartInto));

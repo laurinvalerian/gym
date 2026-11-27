@@ -1,0 +1,27 @@
+{
+ "web": 1,
+ "minNative": 3,
+ "files": [
+  {
+   "name": "app.css",
+   "sha256": "2baa447300ca52524425fdc5fde32d4b9bf4fc664ca35d787a7999e187066059"
+  },
+  {
+   "name": "app.js",
+   "sha256": "c02ef98073b3c892479d96ffa34455963cc811cc21472c33030764850491ee89"
+  },
+  {
+   "name": "index.html",
+   "sha256": "099369e5780fc89ed62754de2a02b80ca4e0b6e5456d2aac941c0af24974c51f"
+  },
+  {
+   "name": "version.json",
+   "sha256": "0e98a1d77c9f8185fd6051a5706f3f4508e71f69e67f11e173fbeac4061d1a0d"
+  }
+ ],
+ "apk": "GymLog.apk",
+ "apkVersion": 3,
+ "apkVersionName": "1.2",
+ "apkSha256": "fe99314dc7eec284919fc97a007efc46d549d2014b0d677ca8756540ca3b12cf",
+ "notes": "Updates automatisch, Anzeige unter der Statusleiste korrigiert"
+}
