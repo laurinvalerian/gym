@@ -1,14 +1,14 @@
 {
- "web": 2,
+ "web": 3,
  "minNative": 3,
  "files": [
   {
    "name": "app.css",
-   "sha256": "e75f1509c6ce76736bace1b7554070b7fff7317a1d2b1c5b285b437c5d580285"
+   "sha256": "da0e90353d092c3bd70572e03628df031e6a59a9ea5e0b1302a012ed33b3cb54"
   },
   {
    "name": "app.js",
-   "sha256": "469e8b52490eb945a35bb35e47d435b93699ee0cf0815d82a5073f872cc3d25e"
+   "sha256": "155f3331ef5892cc493bfaf920c27d68e369503910ce58e33289d67492103284"
   },
   {
    "name": "index.html",
@@ -16,12 +16,12 @@
   },
   {
    "name": "version.json",
-   "sha256": "34790eb0695ec98c3ff72e7b44115ac512fabc77c5781962bae56c446ff02e9a"
+   "sha256": "7a642353acc69b7a8ceb36c8f068cf3ce9818fa80affc1eade712e6604240b9d"
   }
  ],
  "apk": "GymLog.apk",
  "apkVersion": 4,
  "apkVersionName": "1.3",
- "apkSha256": "2bd73cb4c4f0187c0ec7ee0b92e0d8fe432dc7b0dae4b11a6ef16e9bef653295",
- "notes": "Eigene Übungen, neues Design, Deload-Erinnerung"
+ "apkSha256": "d561a14e884f65ea0287fafc4b11e959d2e1ac9f79509b33fda7183e5d18b3c4",
+ "notes": "Fenster springt beim Antippen von + und − nicht mehr"
 }

@@ -821,9 +821,11 @@ let modalBtns = [], modalGen = 0;
 function modal(html, btns) {
   modalGen++;
   modalBtns = (btns || []).filter(Boolean);
-  const m = $('#modal');
-  m.innerHTML = `<div class="sheet"><div class="grab"></div>${html}${modalBtns.length ? `<div class="btns">${modalBtns.map((b, i) => `<button class="btn ${b.c || ''}" data-a="mbtn" data-id="${i}">${esc(b.l)}</button>`).join('')}</div>` : ''}</div>`;
+  const m = $('#modal'), open = !m.classList.contains('hidden'), old = open && m.querySelector('.sheet');
+  const sc = old ? old.scrollTop : 0;
+  m.innerHTML = `<div class="sheet${open ? ' still' : ''}"><div class="grab"></div>${html}${modalBtns.length ? `<div class="btns">${modalBtns.map((b, i) => `<button class="btn ${b.c || ''}" data-a="mbtn" data-id="${i}">${esc(b.l)}</button>`).join('')}</div>` : ''}</div>`;
   m.classList.remove('hidden');
+  if (open) m.querySelector('.sheet').scrollTop = sc;
 }
 function closeModal() { $('#modal').classList.add('hidden'); $('#modal').innerHTML = ''; if (pendingReload) setTimeout(maybeReload, 300); }
 $('#modal').addEventListener('click', e => {
