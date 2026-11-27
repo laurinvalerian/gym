@@ -1,14 +1,14 @@
 {
- "web": 6,
+ "web": 7,
  "minNative": 3,
  "files": [
   {
    "name": "app.css",
-   "sha256": "da8c7573bf4f8712ca8eb996da28737eaea375789d06845cae6c4e196f4300c7"
+   "sha256": "e668fba62069611d14bec11924504f019186c750906cc16cfb627cd10ff512ca"
   },
   {
    "name": "app.js",
-   "sha256": "22114e0ad72d3c549886efa62ed88a39af9f3f7045dc5eeb32e02db1a0423b1a"
+   "sha256": "050f0577123fbe6668a108dde3aed2aba9801126db1a36d618863f3a46a57415"
   },
   {
    "name": "index.html",
@@ -16,12 +16,12 @@
   },
   {
    "name": "version.json",
-   "sha256": "9e2480a4bf4171954331e15355b212297ca15c01e43bdbb9f23470559eeb92e8"
+   "sha256": "e3f69d10c2b7843bdbf01472c45159f306f721a85ec85043618ea4c8cbd61493"
   }
  ],
  "apk": "GymLog.apk",
  "apkVersion": 6,
  "apkVersionName": "1.5",
- "apkSha256": "74507991b745ab2f130a87192e5e53b1221ff8c91c5c00caa3eac4d25da55464",
- "notes": "Sätze einzeln einstellen, Pause pro Satz, Übung umbenennen"
+ "apkSha256": "4a65f729c8b9a4dfa3ae9f7683c26908c39a172d329ea5c323072a84d0611ae9",
+ "notes": "Gewicht pro Satz im Plan festlegen"
 }

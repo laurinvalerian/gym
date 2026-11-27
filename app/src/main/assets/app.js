@@ -513,14 +513,15 @@ function itemEditor(itemId) {
   const rows = it.sets.map((st, si) => {
     const lab = st.t === 'w' ? 'W' + (++wn > 1 ? wn : '') : ++nn;
     return `<button class="badge ${st.t === 'w' ? 'w' : ''}" data-a="tsw" data-s="${si}">${lab}</button>
+      ${hasKg(ex) ? `<input class="tgoal" inputmode="decimal" data-a="tkg" data-s="${si}" value="${st.kg === '' || st.kg == null ? '' : fmt(num(st.kg), 2)}" placeholder="–">` : ''}
       <input class="tgoal" data-a="tgoal" data-s="${si}" value="${esc(st.goal)}" placeholder="${isTime(ex) ? '30' : '8-10'}">
       <div class="stepper"><button data-a="trest" data-s="${si}" data-d="-1">−</button><span>${st.rest ? mmss(st.rest) : 'Aus'}</span><button data-a="trest" data-s="${si}" data-d="1">+</button></div>
       <button class="iconbtn ghost x" data-a="tdel" data-s="${si}" ${it.sets.length < 2 ? 'disabled' : ''} aria-label="Satz entfernen">✕</button>`;
   }).join('');
   modal(`<h3>${esc(ex.name)}</h3><div class="sub">${exTags(ex)} · <span class="tap acc" data-a="itexedit" data-id="${ex.id}">Name / Typ ändern</span></div>
-    <div class="tsets"><span>Satz</span><span>${isTime(ex) ? 'Ziel Sek.' : 'Ziel Wdh.'}</span><span>Pause danach</span><span></span>${rows}</div>
+    <div class="tsets ${hasKg(ex) ? 'kg' : ''}"><span>Satz</span>${hasKg(ex) ? `<span>${kgHead(ex)}</span>` : ''}<span>${isTime(ex) ? 'Sek.' : 'Wdh.'}</span><span>Pause</span><span></span>${rows}</div>
     <button class="btn block" data-a="tadd" style="margin-top:10px">+ Satz</button>
-    <div class="hint">Tipp auf die Nummer, um einen Satz zum Aufwärmsatz (W) zu machen und zurück. Ziel als Zahl oder Bereich, z.B. 8-10.</div>
+    <div class="hint">Tipp auf die Nummer: Aufwärmsatz (W) oder normaler Satz. Wdh. als Zahl oder Bereich, z.B. 8-10.${hasKg(ex) ? ' Gewicht ist optional: Im Training wird sonst das Gewicht vom letzten Mal vorgeschlagen. Änderst du es hier, gilt beim nächsten Training dein neuer Wert.' : ''}</div>
     <div class="two"><button class="btn" data-a="imove" data-s="-1" ${i === 0 ? 'disabled' : ''}>↑ Nach oben</button><button class="btn" data-a="imove" data-s="1" ${i === p.items.length - 1 ? 'disabled' : ''}>↓ Nach unten</button></div>`,
     [{ l: 'Aus Plan entfernen', c: 'danger', f: () => { p.items = p.items.filter(x => x !== it); saveNow(); render(); } }, { l: 'Fertig', c: 'pri', f: () => { saveNow(); render(); } }]);
 }
@@ -537,22 +538,26 @@ function itTpl(it) {
   if (it.tpl) return it.tpl;
   return it.sets.map(st => ({ t: st.t, goal: st.goal || it.target || '8-10', rest: st.rest ?? (st.t === 'w' ? (it.warmRest || 0) : (it.rest ?? 120)) }));
 }
-function workSet(ex, base, i, t, deload) {
+/** Gewicht aus der Vorlage gilt, wenn es nach dem letzten Training gesetzt wurde (oder es noch keins gibt) */
+const tplKgWins = (t, lastStart) => t.kg !== '' && t.kg != null && isFinite(num(t.kg)) && (t.kgAt || 0) > (lastStart || 0);
+function workSet(ex, base, i, t, deload, lastStart) {
   const d = S.settings.deload, step = S.settings.step, [rmin] = range(t.goal);
   const b = base && (base.work[i] || base.work[base.work.length - 1]);
   let kg = b ? num(b.kg) : NaN, reps = b ? num(b.reps) : rmin;
+  if (tplKgWins(t, lastStart)) { kg = num(t.kg); if (!deload) { reps = b ? reps : rmin; } else { kg = kg > 0 ? roundStep(kg * (1 - d.weightPct / 100), step) : kg; reps = Math.max(1, Math.round(reps * (1 - d.repsPct / 100))); } return { t: 'n', kg: hasKg(ex) ? kg : '', reps: isFinite(reps) ? reps : '', rir: '', goal: t.goal, rest: t.rest, done: false }; }
   if (base && base.w.deload && !deload) { if (kg > 0) kg = roundStep(kg / (1 - d.weightPct / 100), step); reps = Math.max(reps, rmin); }
   if (deload && !(base && base.w.deload)) { if (kg > 0) kg = roundStep(kg * (1 - d.weightPct / 100), step); reps = Math.max(1, Math.round(reps * (1 - d.repsPct / 100))); }
   return { t: 'n', kg: hasKg(ex) && isFinite(kg) ? kg : '', reps: isFinite(reps) ? reps : '', rir: '', goal: t.goal, rest: t.rest, done: false };
 }
 function buildItem(pi, deload) {
   const ex = exOf(pi.exId), base = lastSets(pi.exId), tpl = pi.sets.map(x => ({ ...x }));
+  const any = lastSets(pi.exId, true), lastStart = any ? any.w.start : 0;
   const nWork = tpl.filter(x => x.t !== 'w').length;
   const keep = deload ? Math.max(1, Math.round(nWork * (1 - S.settings.deload.setsPct / 100))) : nWork;
   let wi = 0, ni = 0; const sets = [];
   for (const t of tpl) {
-    if (t.t === 'w') { const b = base && (base.warm[wi] || base.warm[base.warm.length - 1]); wi++; sets.push({ t: 'w', kg: b ? b.kg : '', reps: b ? b.reps : range(t.goal)[0], goal: t.goal, rest: t.rest, done: false }); }
-    else { if (ni < keep) sets.push(workSet(ex, base, ni, t, deload)); ni++; }
+    if (t.t === 'w') { const b = base && (base.warm[wi] || base.warm[base.warm.length - 1]); wi++; sets.push({ t: 'w', kg: hasKg(ex) ? (tplKgWins(t, lastStart) ? num(t.kg) : (b ? b.kg : '')) : '', reps: b ? b.reps : range(t.goal)[0], goal: t.goal, rest: t.rest, done: false }); }
+    else { if (ni < keep) sets.push(workSet(ex, base, ni, t, deload, lastStart)); ni++; }
   }
   return { exId: pi.exId, tpl, note: '', sets };
 }
@@ -951,7 +956,7 @@ const A = {
   tsw: el => { const st = itemEditor.it.sets[+el.dataset.s]; st.t = st.t === 'w' ? 'n' : 'w'; if (st.t === 'w' && st.rest === S.settings.rest) st.rest = S.settings.warmRest; else if (st.t === 'n' && st.rest === S.settings.warmRest) st.rest = S.settings.rest; saveNow(); itemEditor(itemEditor.it.id); },
   trest: el => { const st = itemEditor.it.sets[+el.dataset.s]; st.rest = Math.max(0, Math.min(600, (st.rest || 0) + 15 * +el.dataset.d)); saveNow(); itemEditor(itemEditor.it.id); },
   tdel: el => { const it = itemEditor.it; if (it.sets.length > 1) it.sets.splice(+el.dataset.s, 1); saveNow(); itemEditor(it.id); },
-  tadd: () => { const it = itemEditor.it, l = it.sets[it.sets.length - 1] || {}; it.sets.push({ t: 'n', goal: l.t === 'n' ? l.goal : (it.sets.find(x => x.t === 'n') || l).goal || '8-10', rest: l.t === 'n' ? l.rest : S.settings.rest }); saveNow(); itemEditor(it.id); },
+  tadd: () => { const it = itemEditor.it, l = it.sets[it.sets.length - 1] || {}; it.sets.push({ t: 'n', kg: l.kg ?? '', kgAt: l.kgAt, goal: l.t === 'n' ? l.goal : (it.sets.find(x => x.t === 'n') || l).goal || '8-10', rest: l.t === 'n' ? l.rest : S.settings.rest }); saveNow(); itemEditor(it.id); },
   itexedit: el => { const it = itemEditor.it; exerciseEditor(el.dataset.id, () => { render(); if (curPlan() && curPlan().items.includes(it)) itemEditor(it.id); }); },
   itemedit: el => itemEditor(el.dataset.id),
   imove: el => {
@@ -1053,6 +1058,7 @@ document.addEventListener('change', e => {
 document.addEventListener('input', e => {
   const el = e.target, a = el.dataset.a;
   if (a === 'pname') { curPlan().name = el.value; $('#top h1').textContent = el.value || 'Neuer Plan'; saveSoon(); }
+  if (a === 'tkg' && itemEditor.it) { const st = itemEditor.it.sets[+el.dataset.s], v = num(el.value.trim()); st.kg = isFinite(v) ? v : ''; st.kgAt = Date.now(); saveSoon(); }
   if (a === 'tgoal' && itemEditor.it) { itemEditor.it.sets[+el.dataset.s].goal = el.value.trim(); saveSoon(); }
   if (a === 'srir') { const s = sIt(el).sets[+el.dataset.s], v = num(el.value.trim()); s.rir = isFinite(v) ? Math.max(0, Math.min(10, Math.round(v))) : ''; saveSoon(); }
   if (a === 'skg' || a === 'sreps') {
