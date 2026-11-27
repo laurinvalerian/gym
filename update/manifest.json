@@ -1,27 +1,27 @@
 {
- "web": 8,
+ "web": 9,
  "minNative": 3,
  "files": [
   {
    "name": "app.css",
-   "sha256": "e668fba62069611d14bec11924504f019186c750906cc16cfb627cd10ff512ca"
+   "sha256": "bda714cb1ff34743cf53a9ddc0d02c6c03e948222cafd853b714c6300e7d4a93"
   },
   {
    "name": "app.js",
-   "sha256": "0bc010507f5980c68db293d2f5dfded25e0e25cb7e226ab900a55ce9397018a0"
+   "sha256": "8f7f9627d1dae94bc51c09fdcd817aeaad1012e8955f104ba7c137a56f886698"
   },
   {
    "name": "index.html",
-   "sha256": "099369e5780fc89ed62754de2a02b80ca4e0b6e5456d2aac941c0af24974c51f"
+   "sha256": "51592e9a38a1f620510603fd64af2efa2531301908beb37baa345c89708a44c1"
   },
   {
    "name": "version.json",
-   "sha256": "15c228bfb607aeefcced87297bd6b4a346f74bd278ce7530fcd8ef1398aff53f"
+   "sha256": "fb7e3e239a9e644218a5c0ddc4ed6a1f8cca687ae6058226f7cd3f7d40b71c03"
   }
  ],
  "apk": "GymLog.apk",
  "apkVersion": 6,
  "apkVersionName": "1.5",
- "apkSha256": "4b52b6e4c9a262c97edb9f166bf84d51165d8507f63730a56bfde40c2e17c684",
- "notes": "Hinweistext je nach Übungstyp"
+ "apkSha256": "0b3d156760bc696f0be05db32f926c60f28c83de55239c5de3ec68b9b1e38cd5",
+ "notes": "Eigene Zahlentastatur"
 }

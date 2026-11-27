@@ -213,3 +213,16 @@ select.f{appearance:none;padding-right:12px}
 .tsets.kg .stepper button{width:28px}
 .tsets.kg .stepper span{min-width:40px;font-size:13.5px}
 .tsets.kg .iconbtn.x{width:26px}
+
+/* Zahlentastatur */
+#kp{position:fixed;left:0;right:0;bottom:0;z-index:40;background:#14171C;border-top:1px solid var(--line);padding:8px 8px calc(10px + env(safe-area-inset-bottom));box-shadow:0 -10px 30px rgba(0,0,0,.45)}
+.kpg{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
+.kpg button{height:54px;border:0;border-radius:12px;background:var(--card2);font-size:22px;font-weight:650;color:var(--text);font-variant-numeric:tabular-nums}
+.kpg button:active{filter:brightness(1.35)}
+.kpg button.fn{font-size:16px;color:var(--acc);background:var(--card)}
+.kpg button.go{background:var(--acc);color:var(--accink);font-size:16px}
+body.kp-open #view{padding-bottom:300px}
+body.kp-open #modal .sheet{padding-bottom:300px}
+body.kp-open #timer{display:none!important}
+input.kpf{border-color:var(--acc)!important;box-shadow:0 0 0 2px rgba(110,231,160,.25)}
+#wIn.kpf{box-shadow:none;color:var(--acc)}

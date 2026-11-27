@@ -170,6 +170,7 @@ function back() {
 window.onBack = back;
 
 function render(resetScroll) {
+  if (kpT) kpClose();
   const view = $('#view'), sc = view.scrollTop, t = topView();
   let r;
   if (t && t.v === 'plan') r = viewPlanEdit(t.id);
@@ -263,7 +264,7 @@ function viewWeight() {
     <div class="hero-top"><span>${todayW ? 'Heute' : fdate(today)}</span>${todayW ? '<span class="pill a">Gespeichert</span>' : ''}</div>
     <div class="wentry">
       <button class="round" data-a="wstep" data-id="-0.1">−</button>
-      <div class="wval"><input id="wIn" inputmode="decimal" value="${fmtF(pre)}"><span>kg</span></div>
+      <div class="wval"><input id="wIn" inputmode="none" data-kp="dec" data-step="0.1" value="${fmtF(pre)}"><span>kg</span></div>
       <button class="round" data-a="wstep" data-id="0.1">+</button>
     </div>
     <button class="btn pri block" data-a="wsave">${todayW ? 'Aktualisieren' : 'Speichern'}</button>
@@ -309,7 +310,7 @@ function weightDialog(d) {
   const ex = S.weights.find(w => w.d === d);
   modal(`<h3>${ex ? 'Eintrag bearbeiten' : 'Gewicht nachtragen'}</h3>
     <label class="lbl">Datum</label><input class="f" type="date" id="mD" value="${d || dkey()}" max="${dkey()}">
-    <label class="lbl">Gewicht (kg)</label><input class="f" id="mK" inputmode="decimal" value="${ex ? fmtF(ex.kg) : ''}">`,
+    <label class="lbl">Gewicht (kg)</label><input class="f" id="mK" inputmode="none" data-kp="dec" value="${ex ? fmtF(ex.kg) : ''}">`,
     [ex ? { l: 'Löschen', c: 'danger', f: () => { S.weights = S.weights.filter(w => w.d !== d); saveNow(); render(); } } : { l: 'Abbrechen' },
      { l: 'Speichern', c: 'pri', f: () => {
        const nd = $('#mD').value, kg = num($('#mK').value);
@@ -513,8 +514,8 @@ function itemEditor(itemId) {
   const rows = it.sets.map((st, si) => {
     const lab = st.t === 'w' ? 'W' + (++wn > 1 ? wn : '') : ++nn;
     return `<button class="badge ${st.t === 'w' ? 'w' : ''}" data-a="tsw" data-s="${si}">${lab}</button>
-      ${hasKg(ex) ? `<input class="tgoal" inputmode="decimal" data-a="tkg" data-s="${si}" value="${st.kg === '' || st.kg == null ? '' : fmt(num(st.kg), 2)}" placeholder="–">` : ''}
-      <input class="tgoal" data-a="tgoal" data-s="${si}" value="${esc(st.goal)}" placeholder="${isTime(ex) ? '30' : '8-10'}">
+      ${hasKg(ex) ? `<input class="tgoal" inputmode="none" data-kp="dec" data-a="tkg" data-s="${si}" value="${st.kg === '' || st.kg == null ? '' : fmt(num(st.kg), 2)}" placeholder="–">` : ''}
+      <input class="tgoal" inputmode="none" data-kp="range" data-a="tgoal" data-s="${si}" value="${esc(st.goal)}" placeholder="${isTime(ex) ? '30' : '8-10'}">
       <div class="stepper"><button data-a="trest" data-s="${si}" data-d="-1">−</button><span>${st.rest ? mmss(st.rest) : 'Aus'}</span><button data-a="trest" data-s="${si}" data-d="1">+</button></div>
       <button class="iconbtn ghost x" data-a="tdel" data-s="${si}" ${it.sets.length < 2 ? 'disabled' : ''} aria-label="Satz entfernen">✕</button>`;
   }).join('');
@@ -629,9 +630,9 @@ function viewSession() {
       const lab = s.t === 'w' ? 'W' + (++wn > 1 ? wn : '') : ++nn;
       const c = `${s.t === 'w' ? 'w' : ''} ${s.done ? 'done' : ''}`;
       h += `<button class="badge ${c}" data-a="stype" data-id="${idx}" data-s="${si}">${lab}</button>`;
-      if (kg) h += `<input class="${c}" inputmode="decimal" data-a="skg" data-id="${idx}" data-s="${si}" value="${s.kg === '' ? '' : fmt(num(s.kg), 2)}" placeholder="0">`;
-      h += `<input class="${c}" inputmode="numeric" data-a="sreps" data-id="${idx}" data-s="${si}" value="${s.reps}" placeholder="0">`;
-      if (rir) h += s.t === 'w' ? '<span></span>' : `<input class="rir ${c}" inputmode="numeric" maxlength="2" data-a="srir" data-id="${idx}" data-s="${si}" value="${s.rir ?? ''}" placeholder="–">`;
+      if (kg) h += `<input class="${c}" inputmode="none" data-kp="dec" data-a="skg" data-id="${idx}" data-s="${si}" value="${s.kg === '' ? '' : fmt(num(s.kg), 2)}" placeholder="0">`;
+      h += `<input class="${c}" inputmode="none" data-kp="int" data-step="${isTime(ex) ? 5 : 1}" data-a="sreps" data-id="${idx}" data-s="${si}" value="${s.reps}" placeholder="0">`;
+      if (rir) h += s.t === 'w' ? '<span></span>' : `<input class="rir ${c}" inputmode="none" data-kp="int" maxlength="2" data-a="srir" data-id="${idx}" data-s="${si}" value="${s.rir ?? ''}" placeholder="–">`;
       h += `<button class="chk ${c}" data-a="sdone" data-id="${idx}" data-s="${si}" aria-label="Erledigt">${IC.check}</button>`;
     });
     h += `</div><div class="ex-f"><button class="btn sm" data-a="sadd" data-id="${idx}">+ Satz</button><button class="btn sm" data-a="swadd" data-id="${idx}">+ Aufwärmen</button><button class="btn sm" data-a="snote" data-id="${idx}">Notiz</button><span class="grow"></span><button class="btn sm" data-a="srem" data-id="${idx}">− Satz</button></div></div>`;
@@ -785,9 +786,9 @@ function viewWorkoutDetail(id) {
     it.sets.forEach((s, si) => {
       const c = s.t === 'w' ? 'w' : '';
       h += `<span class="badge ${c}">${s.t === 'w' ? 'W' : ++nn}</span>`;
-      if (kg) h += `<input class="${c}" inputmode="decimal" data-a="hkg" data-id="${w.id}" data-i="${ii}" data-s="${si}" value="${fmt(s.kg, 2)}">`;
-      h += `<input class="${c}" inputmode="numeric" data-a="hreps" data-id="${w.id}" data-i="${ii}" data-s="${si}" value="${s.reps}">`;
-      if (rir) h += s.t === 'w' ? '<span></span>' : `<input class="rir" inputmode="numeric" data-a="hrir" data-id="${w.id}" data-i="${ii}" data-s="${si}" value="${s.rir ?? ''}" placeholder="–">`;
+      if (kg) h += `<input class="${c}" inputmode="none" data-kp="dec" data-a="hkg" data-id="${w.id}" data-i="${ii}" data-s="${si}" value="${fmt(s.kg, 2)}">`;
+      h += `<input class="${c}" inputmode="none" data-kp="int" data-step="${isTime(ex) ? 5 : 1}" data-a="hreps" data-id="${w.id}" data-i="${ii}" data-s="${si}" value="${s.reps}">`;
+      if (rir) h += s.t === 'w' ? '<span></span>' : `<input class="rir" inputmode="none" data-kp="int" data-a="hrir" data-id="${w.id}" data-i="${ii}" data-s="${si}" value="${s.rir ?? ''}" placeholder="–">`;
     });
     h += '</div></div>';
   });
@@ -890,7 +891,8 @@ function modal(html, btns) {
   m.classList.remove('hidden');
   if (open) m.querySelector('.sheet').scrollTop = sc;
 }
-function closeModal() { $('#modal').classList.add('hidden'); $('#modal').innerHTML = ''; if (pendingReload) setTimeout(maybeReload, 300); }
+function closeModal() { if (kpT && kpT.closest('#modal')) kpClose();
+  $('#modal').classList.add('hidden'); $('#modal').innerHTML = ''; if (pendingReload) setTimeout(maybeReload, 300); }
 $('#modal').addEventListener('click', e => {
   if (e.target.id !== 'modal') return;
   closeModal(); if (topView() && topView().v === 'plan') render();
@@ -1068,6 +1070,61 @@ document.addEventListener('input', e => {
 });
 document.addEventListener('focusin', e => { if (e.target.matches('.sets input, #wIn')) setTimeout(() => e.target.select(), 0); });
 document.addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.matches('.sets input, #wIn')) e.target.blur(); });
+
+// ================= Zahlentastatur =================
+let kpT = null, kpFresh = false;
+const kpEl = () => $('#kp');
+function kpScope(el) { return el.closest('#modal') || $('#view'); }
+function kpNext(el) { const all = [...kpScope(el).querySelectorAll('[data-kp]')]; return all[all.indexOf(el) + 1] || null; }
+function kpStep(el) { return el.dataset.step ? parseFloat(el.dataset.step) : el.dataset.kp === 'dec' ? S.settings.step : 1; }
+function kpOpen(el) {
+  if (kpT && kpT !== el) kpCommit();
+  if (kpT) kpT.classList.remove('kpf');
+  kpT = el; kpFresh = true; el.classList.add('kpf');
+  const t = el.dataset.kp, st = kpStep(el), nx = kpNext(el);
+  const k = (v, l = v, c = '') => `<button class="${c}" data-k="${v}">${l}</button>`;
+  kpEl().innerHTML = `<div class="kpg">
+    ${k('1')}${k('2')}${k('3')}${k('del', '⌫', 'fn')}
+    ${k('4')}${k('5')}${k('6')}${t === 'range' ? k('-', '–', 'fn') : k('minus', '−' + fmt(st, 2), 'fn')}
+    ${k('7')}${k('8')}${k('9')}${t === 'range' ? '<span></span>' : k('plus', '+' + fmt(st, 2), 'fn')}
+    ${t === 'dec' ? k(',') : '<span></span>'}${k('0')}${k('done', 'Fertig', 'fn')}${k(nx ? 'next' : 'done', nx ? 'Weiter' : 'OK', 'go')}</div>`;
+  kpEl().classList.remove('hidden'); document.body.classList.add('kp-open');
+  setTimeout(() => el.scrollIntoView({ block: 'center', behavior: 'smooth' }), 30);
+}
+function kpCommit() { if (kpT) kpT.dispatchEvent(new Event('change', { bubbles: true })); }
+function kpClose() {
+  if (!kpT) return;
+  kpCommit(); kpT.classList.remove('kpf'); try { kpT.blur(); } catch (e) {}
+  kpT = null; kpEl().classList.add('hidden'); document.body.classList.remove('kp-open');
+}
+function kpSet(v) { kpT.value = v; kpT.dispatchEvent(new Event('input', { bubbles: true })); }
+function kpKey(k) {
+  const el = kpT; if (!el) return;
+  if (!document.body.contains(el)) { kpClose(); return; }
+  let v = kpFresh ? '' : el.value;
+  if (k === 'done') { kpClose(); return; }
+  if (k === 'next') { const n = kpNext(el); kpCommit(); if (n) { n.focus(); kpOpen(n); } else kpClose(); return; }
+  if (k === 'del') { kpFresh = false; kpSet(el.value.slice(0, -1)); return; }
+  if (k === 'minus' || k === 'plus') {
+    const st = kpStep(el), cur = num(el.value) || 0, n = Math.max(0, Math.round((cur + (k === 'plus' ? st : -st)) * 100) / 100);
+    kpFresh = false; kpSet(el.dataset.kp === 'dec' ? fmt(n, 2) : String(Math.round(n))); return;
+  }
+  if (k === ',' && (v.includes(',') || el.dataset.kp !== 'dec')) return;
+  if (k === '-' && (v.includes('-') || v === '')) return;
+  if (v.length >= 7) return;
+  kpFresh = false; kpSet(v + k);
+}
+document.addEventListener('click', e => {
+  const el = e.target.closest('[data-kp]');
+  if (el) { if (el !== kpT) kpOpen(el); return; }
+}, true);
+document.addEventListener('pointerdown', e => {
+  if (!kpT) return;
+  if (e.target.closest('#kp') || e.target.closest('[data-kp]')) return;
+  kpClose();
+}, true);
+kpEl().addEventListener('mousedown', e => e.preventDefault());
+kpEl().addEventListener('click', e => { const b = e.target.closest('[data-k]'); if (b) kpKey(b.dataset.k); });
 
 // ================= Start =================
 load();
