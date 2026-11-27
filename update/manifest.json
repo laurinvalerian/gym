@@ -1,5 +1,5 @@
 {
- "web": 4,
+ "web": 5,
  "minNative": 3,
  "files": [
   {
@@ -8,7 +8,7 @@
   },
   {
    "name": "app.js",
-   "sha256": "155f3331ef5892cc493bfaf920c27d68e369503910ce58e33289d67492103284"
+   "sha256": "88dc6dfe27521ef776a69207955fc9f54758250b357fcae24cc3e3abe997bb78"
   },
   {
    "name": "index.html",
@@ -16,12 +16,12 @@
   },
   {
    "name": "version.json",
-   "sha256": "cbc2f4596fa8e1e761cbb276e5f7b09a40c4ca57763b0df5c7b317dbaf34bc8e"
+   "sha256": "afaa15e1815cfe5cd4bf9aa4d935e6ec3605368223593455c827920ce60d9137"
   }
  ],
  "apk": "GymLog.apk",
- "apkVersion": 5,
- "apkVersionName": "1.4",
- "apkSha256": "f5cf8a17d18b3602c0b430fd9def90bc9908586b08e9e7f26aa28bb545bd9b69",
- "notes": "Sucht bei jedem Öffnen nach Updates"
+ "apkVersion": 6,
+ "apkVersionName": "1.5",
+ "apkSha256": "8cfa284cf9c30c32c995ebdc035020ab46211f711347be33ff99532f33693975",
+ "notes": "Sicherung in Google Drive, Schutz vor Datenverlust"
 }

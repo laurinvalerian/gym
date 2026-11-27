@@ -50,6 +50,9 @@ public class MainActivity extends Activity {
     private static final int REQ_EXPORT = 11;
     private static final int REQ_IMPORT = 12;
     private static final int REQ_TREE = 13;
+    private static final int REQ_BFILE = 14;
+    private volatile String pendingBackup = null;
+    private volatile boolean backupQueued = false;
     private static final String DATA_FILE = "gymlog.json";
     private static final String BACKUP_NAME = "GymLog-Backup.json";
 
@@ -226,6 +229,56 @@ public class MainActivity extends Activity {
         }
     }
 
+    private static String readValid(File f) {
+        try {
+            if (!f.exists()) return null;
+            String t = readAll(new FileInputStream(f));
+            new JSONObject(t);
+            return t;
+        } catch (Exception e) { return null; }
+    }
+
+    /** Leerer Stand (keine Daten) darf nie eine Sicherung überschreiben. */
+    private static boolean hasContent(String data) {
+        try {
+            JSONObject o = new JSONObject(data);
+            String[] keys = {"weights", "workouts", "plans", "exercises"};
+            for (String k : keys) if (o.optJSONArray(k) != null && o.optJSONArray(k).length() > 0) return true;
+        } catch (Exception ignored) {}
+        return false;
+    }
+
+    /** Sammelt Änderungen und schreibt nur den neuesten Stand nach außen. */
+    private void queueBackup(String data) {
+        pendingBackup = data;
+        if (backupQueued) return;
+        backupQueued = true;
+        io.execute(() -> {
+            backupQueued = false;
+            String d = pendingBackup;
+            if (d == null) return;
+            if (!hasContent(d)) return;
+            snapshot(d);
+            writeToFile(d);
+            writeToTree(d);
+        });
+    }
+
+    private void writeToFile(String data) {
+        String f = prefs.getString("bfile", null);
+        if (f == null) return;
+        Exception last = null;
+        for (String mode : new String[]{"wt", "rwt"}) {
+            try (OutputStream o = getContentResolver().openOutputStream(Uri.parse(f), mode)) {
+                o.write(data.getBytes(StandardCharsets.UTF_8));
+                o.flush();
+                prefs.edit().putLong("bfileLast", System.currentTimeMillis()).putString("bfileErr", "").apply();
+                return;
+            } catch (Exception e) { last = e; }
+        }
+        prefs.edit().putString("bfileErr", String.valueOf(last == null ? "?" : last.getMessage())).apply();
+    }
+
     private PendingIntent timerIntent() {
         Intent i = new Intent(this, TimerReceiver.class);
         return PendingIntent.getBroadcast(this, 7, i, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
@@ -233,17 +286,21 @@ public class MainActivity extends Activity {
 
     class Bridge {
         @JavascriptInterface public String load() {
-            try {
-                File f = new File(getFilesDir(), DATA_FILE);
-                if (!f.exists()) return "";
-                return readAll(new FileInputStream(f));
-            } catch (Exception e) { return ""; }
+            // Hauptdatei; falls kaputt: neueste gültige Tageskopie
+            String main = readValid(new File(getFilesDir(), DATA_FILE));
+            if (main != null) return main;
+            File[] snaps = new File(getFilesDir(), "snapshots").listFiles((d, n) -> n.endsWith(".json"));
+            if (snaps != null) {
+                Arrays.sort(snaps);
+                for (int i = snaps.length - 1; i >= 0; i--) { String t = readValid(snaps[i]); if (t != null) return t; }
+            }
+            return "";
         }
 
         @JavascriptInterface public boolean save(String data) {
             try {
                 writeAtomic(new File(getFilesDir(), DATA_FILE), data);
-                io.execute(() -> { snapshot(data); writeToTree(data); });
+                queueBackup(data);
                 return true;
             } catch (Exception e) { return false; }
         }
@@ -271,12 +328,33 @@ public class MainActivity extends Activity {
             startActivityForResult(i, REQ_TREE);
         }
 
+        /** Sicherungsdatei anlegen, z.B. in Google Drive. Wird danach bei jeder Änderung überschrieben. */
+        @JavascriptInterface public void pickBackupFile() {
+            Intent i = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+            i.addCategory(Intent.CATEGORY_OPENABLE);
+            i.setType("application/json");
+            i.putExtra(Intent.EXTRA_TITLE, "GymLog-Backup.json");
+            i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+                    | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
+            startActivityForResult(i, REQ_BFILE);
+        }
+
+        /** Ort|zuletztGesichert|Fehler */
         @JavascriptInterface public String backupInfo() {
+            String f = prefs.getString("bfile", null);
+            if (f != null) {
+                Uri u = Uri.parse(f);
+                String where = u.getAuthority() != null && u.getAuthority().contains("google.android.apps.docs") ? "Google Drive" : "Datei";
+                return where + " · " + prefs.getString("bfileName", "GymLog-Backup.json") + "|" + prefs.getLong("bfileLast", 0) + "|" + prefs.getString("bfileErr", "");
+            }
             String t = prefs.getString("tree", null);
             if (t == null) return "";
-            String name = Uri.decode(Uri.parse(t).getLastPathSegment());
-            long last = prefs.getLong("treeLast", 0);
-            return name + "|" + last;
+            return "Ordner " + Uri.decode(Uri.parse(t).getLastPathSegment()) + "|" + prefs.getLong("treeLast", 0) + "|";
+        }
+
+        @JavascriptInterface public void backupNow() {
+            String d = load();
+            if (!d.isEmpty()) queueBackup(d);
         }
 
         @JavascriptInterface public void clearBackupFolder() { prefs.edit().remove("tree").remove("treeLast").apply(); }
@@ -364,6 +442,21 @@ public class MainActivity extends Activity {
                     String text = readAll(getContentResolver().openInputStream(uri));
                     js("window.onImport && window.onImport(" + quote(text) + ")");
                 } catch (Exception e) { js("window.onNative && window.onNative('importError')"); }
+            });
+        } else if (req == REQ_BFILE) {
+            try {
+                getContentResolver().takePersistableUriPermission(uri,
+                        Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
+            } catch (Exception ignored) { /* manche Anbieter erlauben nur Schreiben ohne dauerhafte Freigabe */ }
+            String name = "GymLog-Backup.json";
+            try (Cursor c = getContentResolver().query(uri, new String[]{DocumentsContract.Document.COLUMN_DISPLAY_NAME}, null, null, null)) {
+                if (c != null && c.moveToFirst()) name = c.getString(0);
+            } catch (Exception ignored) {}
+            prefs.edit().putString("bfile", uri.toString()).putString("bfileName", name).remove("bfileErr").apply();
+            io.execute(() -> {
+                String d = readValid(new File(getFilesDir(), DATA_FILE));
+                if (d != null) writeToFile(d);
+                js("window.onNative && window.onNative('" + (prefs.getString("bfileErr", "").isEmpty() ? "fileSet" : "fileError") + "')");
             });
         } else if (req == REQ_TREE) {
             try {

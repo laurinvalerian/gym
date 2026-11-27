@@ -253,7 +253,7 @@ function viewWeight() {
       <button class="round" data-a="wstep" data-id="0.1">+</button>
     </div>
     <button class="btn pri block" data-a="wsave">${todayW ? 'Aktualisieren' : 'Speichern'}</button>
-  </div>`;
+  </div>` + backupBanner();
   if (cur) {
     const d = prev ? cur.avg - prev.avg : NaN;
     let trend = '';
@@ -452,7 +452,7 @@ function viewExerciseList() {
 // ================= Pläne =================
 function lastDone(planId) { const w = S.workouts.filter(w => w.planId === planId).sort((a, b) => b.start - a.start)[0]; return w ? w.start : null; }
 function viewTraining() {
-  let h = apkBanner() + deloadReminder();
+  let h = apkBanner() + backupBanner() + restoreCard() + deloadReminder();
   if (S.active) {
     const done = S.active.items.reduce((a, i) => a + i.sets.filter(s => s.done).length, 0), tot = S.active.items.reduce((a, i) => a + i.sets.length, 0);
     h += `<div class="notice ok tap" data-a="resume"><div class="ri" style="padding:0"><div class="ri-l"><b>Training läuft: ${esc(S.active.name)}</b><small>${done}/${tot} Sätze · <span id="elapsed2">${mmss((Date.now() - S.active.start) / 1000)}</span></small></div><div class="ri-c"><button class="btn pri sm">Weiter</button></div></div></div>`;
@@ -762,9 +762,13 @@ function viewWorkoutDetail(id) {
 // ================= Mehr / Daten =================
 function viewSettings() {
   const s = S.settings, vi = verInfo();
-  let bi = ''; if (NATIVE) { try { bi = Android.backupInfo(); } catch (e) {} }
-  const [bname, blast] = bi ? bi.split('|') : ['', 0];
-  let h = apkBanner() + `<div class="sec">Pausentimer</div><div class="card list">
+  const b = backupState();
+  let h = apkBanner() + `<div class="sec">Sicherung</div><div class="card">${backupStatusHtml(b)}
+    ${b.can ? `<button class="btn ${b.where && !b.err ? '' : 'pri'} block" data-a="pickbfile" style="margin-top:12px">${b.where ? 'Sicherungsdatei ändern' : 'Sicherung in Google Drive einrichten'}</button>
+    <div class="hint">Im Dialog links im Menü <b>Drive</b> wählen und speichern. Danach wird die Datei bei jeder Änderung automatisch aktualisiert. Sie liegt privat in deinem Google-Konto, bleibt beim Löschen der App erhalten und auch wenn du das Handy verlierst.</div>` : ''}
+    <div class="two"><button class="btn" data-a="export">Kopie exportieren</button><button class="btn" data-a="import">Wiederherstellen</button></div>
+    <div class="hint">Wiederherstellen: Sicherungsdatei auswählen (z.B. aus Drive). Ersetzt die Daten auf dem Handy.</div></div>
+  <div class="sec">Pausentimer</div><div class="card list">
     ${rowItem('Standardpause', stepper('tst', 'rest', mmss(s.rest)), 'Für neue Übungen im Plan')}
     ${rowItem('Pause nach Aufwärmen', stepper('tst', 'warmRest', s.warmRest ? mmss(s.warmRest) : 'Aus'))}
     ${rowItem('Vibration', toggle('sset', 'vibrate', s.vibrate))}
@@ -773,17 +777,40 @@ function viewSettings() {
   <div class="sec">Training</div><div class="card list">
     ${rowItem('RIR erfassen', toggle('sset', 'rir', s.rir), 'Wiederholungen im Tank pro Satz')}
     ${rowItem('Gewichtsschritte', `<select class="f sm" data-a="stepkg">${[1, 1.25, 2, 2.5, 5].map(v => `<option value="${v}" ${s.step === v ? 'selected' : ''}>${fmt(v, 2)} kg</option>`).join('')}</select>`, 'Für Vorschläge und Deload')}
-    <div class="li tap" data-a="deloadinfo"><div class="li-m"><b>Deload</b><small>Plan, Prozente und Erinnerung</small></div><span class="chev">${IC.chev}</span></div></div>
-  <div class="sec">Daten & Sicherung</div><div class="card">
-    <p class="info" style="margin-top:0">Alles wird dauerhaft auf deinem Handy gespeichert (${S.weights.length} Gewichtseinträge, ${plural(S.workouts.length, 'Training', 'Trainings')}) und zusätzlich über das Android-Backup gesichert.</p>`;
-  if (NATIVE) h += `<div class="list">${rowItem('Auto-Sicherung', bname ? `<span class="acc small">${esc(bname)}</span>` : '<span class="warn small">nicht eingerichtet</span>', bname ? 'Zuletzt: ' + (+blast ? new Date(+blast).toLocaleString('de-DE', { dateStyle: 'short', timeStyle: 'short' }) : 'noch nicht') : 'Ordner wählen, z.B. Google Drive')}</div>
-    <button class="btn ${bname ? '' : 'pri'} block" data-a="pickfolder">${bname ? 'Ordner ändern' : 'Sicherungsordner wählen'}</button>
-    <div class="hint">Dort wird nach jeder Änderung GymLog-Backup.json aktualisiert. Die Datei bleibt auch erhalten, wenn die App gelöscht wird.</div>`;
-  h += `<div class="two"><button class="btn" data-a="export">Exportieren</button><button class="btn" data-a="import">Importieren</button></div></div>
+    <div class="li tap" data-a="deloadinfo"><div class="li-m"><b>Deload</b><small>Plan, Prozente und Erinnerung</small></div><span class="chev">${IC.chev}</span></div></div>`;
+  h += `
   <div class="sec">App</div><div class="card list">
     ${rowItem('Version', `<span class="mut">${esc(vi.name)}${vi.web ? ' · Stand ' + vi.web : ''}</span>`, 'Offline nutzbar, aktualisiert sich online selbst')}
     ${NATIVE ? `<div class="li tap" data-a="chkupd"><div class="li-m"><b>Nach Updates suchen</b></div><span class="chev">${IC.chev}</span></div>` : ''}</div>`;
   return ['Mehr', h];
+}
+/** Sicherung außerhalb des Handys (Google Drive o.ä.) */
+function backupState() {
+  const can = NATIVE && !!Android.pickBackupFile;
+  let bi = ''; if (NATIVE) { try { bi = Android.backupInfo(); } catch (e) {} }
+  const [where, last, err] = bi ? bi.split('|') : ['', 0, ''];
+  return { can, where, last: +last || 0, err: err || '' };
+}
+const hasData = () => S.weights.length || S.workouts.length || S.plans.length || S.exercises.length;
+function backupStatusHtml(b) {
+  const n = `${plural(S.weights.length, "Gewichtseintrag", "Gewichtseinträge")} · ${plural(S.workouts.length, 'Training', 'Trainings')} · ${plural(S.plans.length, 'Plan', 'Pläne')}`;
+  if (!b.where) return `<div class="ri" style="padding:0"><div class="ri-l"><b class="warn">Noch keine Sicherung außerhalb des Handys</b><small>${n}</small></div></div>`;
+  const t = b.last ? new Date(b.last).toLocaleString('de-DE', { dateStyle: 'short', timeStyle: 'short' }) : 'noch nicht';
+  return `<div class="ri" style="padding:0"><div class="ri-l"><b class="${b.err ? 'red' : 'acc'}">${b.err ? 'Sicherung fehlgeschlagen' : 'Gesichert ✓'}</b><small>${esc(b.where)} · zuletzt ${t}</small><small>${n}</small></div></div>`;
+}
+/** Hinweis oben, solange keine externe Sicherung läuft */
+function backupBanner() {
+  const b = backupState();
+  if (!b.can || !hasData() || (b.where && !b.err)) return '';
+  return `<div class="notice warn"><b>${b.err ? 'Sicherung fehlgeschlagen' : 'Sichere deine Daten'}</b>
+    <p>${b.err ? 'Die Sicherungsdatei konnte nicht geschrieben werden. Bitte neu einrichten.' : 'Damit nichts verloren geht, auch wenn du die App löschst oder das Handy verlierst: einmal eine Sicherung in Google Drive einrichten. Dauert 10 Sekunden.'}</p>
+    <button class="btn warnb block" data-a="pickbfile" style="margin-top:10px">Jetzt einrichten</button></div>`;
+}
+/** Leere App (z.B. neu installiert): Wiederherstellen anbieten */
+function restoreCard() {
+  if (hasData() || !NATIVE) return '';
+  return `<div class="card"><b>Neu hier oder Handy gewechselt?</b><p class="info">Hast du schon eine Sicherung (GymLog-Backup.json, z.B. in Google Drive), hol dir damit alle Daten zurück.</p>
+    <button class="btn pri block" data-a="import" style="margin-top:12px">Daten wiederherstellen</button></div>`;
 }
 function exportData() {
   const txt = JSON.stringify(S, null, 1), name = `GymLog-${dkey()}.json`;
@@ -793,8 +820,8 @@ function exportData() {
 window.onImport = text => {
   let d; try { d = JSON.parse(text); } catch (e) { toast('Datei ist kein gültiges Backup'); return; }
   if (!d || !Array.isArray(d.weights) || !Array.isArray(d.workouts)) { toast('Datei ist kein GymLog-Backup'); return; }
-  modal(`<h3>Backup importieren?</h3><p class="info">${d.weights.length} Gewichtseinträge, ${d.workouts.length} Trainings, ${(d.plans || []).length} Pläne. Deine aktuellen Daten werden ersetzt.</p>`,
-    [{ l: 'Abbrechen' }, { l: 'Importieren', c: 'pri', f: () => { S = merge(DEFAULTS(), migrate(d)); saveNow(); stack = []; syncReminder(); render(true); toast('Import erfolgreich'); } }]);
+  modal(`<h3>Daten wiederherstellen?</h3><p class="info">${d.weights.length} Gewichtseinträge, ${d.workouts.length} Trainings, ${(d.plans || []).length} Pläne. Deine aktuellen Daten werden ersetzt.</p>`,
+    [{ l: 'Abbrechen' }, { l: 'Wiederherstellen', c: 'pri', f: () => { S = merge(DEFAULTS(), migrate(d)); saveNow(); stack = []; syncReminder(); render(true); toast('Wiederhergestellt ✓'); } }]);
 };
 
 // ================= Updates =================
@@ -810,9 +837,9 @@ function apkBanner() {
   return `<div class="notice ok"><div class="ri" style="padding:0"><div class="ri-l"><b>Update ${esc(apkUpd.name)} verfügbar</b><small>${apkUpd.notes ? esc(apkUpd.notes) + ' · ' : ''}Deine Daten bleiben erhalten</small></div><div class="ri-c"><button class="btn pri sm" data-a="instupd">Installieren</button></div></div></div>`;
 }
 window.onNative = ev => {
-  const m = { upToDate: 'Du hast die neueste Version', offline: 'Keine Internetverbindung', updateError: 'Update fehlgeschlagen, später nochmal', needInstallPermission: 'Bitte „Aus dieser Quelle zulassen“ aktivieren und nochmal tippen', downloading: 'Update wird geladen…', exported: 'Export gespeichert', exportError: 'Export fehlgeschlagen', importError: 'Datei konnte nicht gelesen werden', folderSet: 'Sicherungsordner eingerichtet', folderError: 'Ordner konnte nicht gesetzt werden' };
+  const m = { upToDate: 'Du hast die neueste Version', offline: 'Keine Internetverbindung', updateError: 'Update fehlgeschlagen, später nochmal', needInstallPermission: 'Bitte „Aus dieser Quelle zulassen“ aktivieren und nochmal tippen', downloading: 'Update wird geladen…', exported: 'Export gespeichert', exportError: 'Export fehlgeschlagen', importError: 'Datei konnte nicht gelesen werden', folderSet: 'Sicherungsordner eingerichtet', folderError: 'Ordner konnte nicht gesetzt werden', fileSet: 'Sicherung eingerichtet ✓ Ab jetzt wird automatisch gesichert', fileError: 'Sicherung konnte nicht geschrieben werden' };
   toast(m[ev] || ev);
-  if (ev === 'folderSet') { saveNow(); setTimeout(render, 800); }
+  if (ev === 'folderSet' || ev === 'fileSet' || ev === 'fileError') { if (ev === 'folderSet') saveNow(); setTimeout(render, 300); }
 };
 $('#fileIn').addEventListener('change', e => { const f = e.target.files[0]; if (!f) return; f.text().then(window.onImport); e.target.value = ''; });
 
@@ -958,6 +985,7 @@ const A = {
   export: () => exportData(),
   import: () => { if (NATIVE) Android.importFile(); else $('#fileIn').click(); },
   pickfolder: () => Android.pickBackupFolder(),
+  pickbfile: () => { if (Android.pickBackupFile) Android.pickBackupFile(); },
   chkupd: () => { toast('Suche nach Updates…'); Android.checkUpdates(); },
   instupd: () => Android.installUpdate()
 };
