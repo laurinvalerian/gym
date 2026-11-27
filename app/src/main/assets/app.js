@@ -14,8 +14,8 @@ const DEFAULTS = () => ({
   settings: {
     rest: 120, warmRest: 60, step: 2.5, vibrate: true, sound: true, keepAwake: true, rir: true,
     deloadOn: false, deloadRemind: true, deloadDismissed: null,
-    deload: { weightPct: 10, repsPct: 20, setsPct: 40 },
-    cycle: { start: null, firstBlock: 8, block: 6, deloadStart: null }
+    deload: { weightPct: 10, repsPct: 0, setsPct: 50 },
+    cycle: { start: null, reentry: 4, block: 7, firstBlock: 10, deloadStart: null }
   }
 });
 
@@ -319,20 +319,18 @@ function weightDialog(d) {
      } }]);
 }
 
-// ================= Deload =================
-/* Fester Plan ab Zyklus-Start: erster Deload nach `firstBlock` Wochen, danach alle `block` Wochen.
-   Der Schalter verschiebt nichts, er wirkt nur auf die Berechnung der Trainings. */
-function deloadStatus() {
-  const c = S.settings.cycle;
-  if (!c.start) return null;
-  const w = Math.max(0, Math.round((pdate(monday(dkey())) - pdate(monday(c.start))) / DAY / 7));
-  const d0 = c.firstBlock, b = c.block;
-  const isWeek = w >= d0 && (w - d0) % b === 0;
-  const next = w <= d0 ? d0 : d0 + Math.ceil((w - d0) / b) * b;
-  const prev = w < d0 ? -1 : d0 + Math.floor((w - d0) / b) * b;
-  const after = isWeek ? w + b : next;
-  const wkDate = n => dkey(new Date(+pdate(monday(c.start)) + n * 7 * DAY + 12 * 3600e3));
-  return { w, isWeek, dueIn: next - w, nextDate: wkDate(next), afterDate: wkDate(after), weekInBlock: prev < 0 ? w + 1 : w - prev, blockLen: prev < 0 ? d0 : b };
+// ================= Wochen & Deload =================
+/* Programm: Woche 1–4 Wiedereinstieg, danach Blöcke à 7 Wochen, Woche 7 ist Deload (GL.weekInfo).
+   In der Deload-Woche wird automatisch leichter gerechnet, außer du wählst „Fühl mich gut“.
+   Der Schalter startet zusätzlich einen Deload außer der Reihe (7 Tage). */
+function weekNow() { const c = S.settings.cycle; return GL.weekInfo(c, dkey()) || GL.weekInfo(Object.assign({}, c, { start: dkey() }), dkey()); }
+const weekStarted = () => !!S.settings.cycle.start;
+function deloadNow() { const i = weekNow(); return S.settings.deloadOn || (weekStarted() && i.isDeload && S.settings.deloadDismissed !== monday(dkey())); }
+const REENTRY_TXT = { 1: '2 Arbeitssätze pro Übung, RIR 3, Top-Set-Übungen nur 3×5 leicht', 2: 'Normale Sätze, RIR 2–3, Top-Set-Übungen weiter 3×5', 3: 'RIR 2, Top Sets erlaubt', 4: 'Normal trainieren' };
+function phaseText(i, dl) {
+  if (dl) return 'Deload: Sätze halbiert, −10 % Gewicht, RIR 3–4, kein Top Set';
+  if (i.phase === 'reentry') return `Wiedereinstieg ${i.reW}/${S.settings.cycle.reentry}: ${REENTRY_TXT[i.reW] || 'Normal trainieren'}`;
+  return `Block-Woche ${i.blockWeek}/${S.settings.cycle.block} · Deload in ${plural(i.dueIn, 'Woche', 'Wochen')}`;
 }
 function setDeload(on) {
   S.settings.deloadOn = on;
@@ -341,8 +339,7 @@ function setDeload(on) {
   saveNow(); render();
 }
 function askDeload() {
-  const d = S.settings.deload;
-  modal(`<h3>Deload starten?</h3><p class="info">7 Tage lang rechnet die App deine Trainings mit <b>−${d.setsPct}% Sätzen</b>, <b>−${d.repsPct}% Wdh.</b> und <b>−${d.weightPct}% Gewicht</b>. Danach schaltet er sich von selbst aus. Dein Deload-Plan verschiebt sich dadurch nicht.</p>`,
+  modal(`<h3>Deload starten?</h3><p class="info">7 Tage lang rechnet die App deine Trainings leichter: <b>Sätze halbiert</b>, <b>−${S.settings.deload.weightPct}% Gewicht</b>, RIR 3–4, kein Top Set. Danach schaltet er sich von selbst aus. Dein Wochenplan verschiebt sich dadurch nicht.</p>`,
     [{ l: 'Abbrechen' }, { l: 'Deload starten', c: 'warnb', f: () => setDeload(true) }]);
 }
 function deloadAutoOff() {
@@ -354,70 +351,75 @@ function deloadAutoOff() {
 function syncReminder() {
   if (!NATIVE || !Android.scheduleReminder) return;
   try {
-    const ds = deloadStatus();
-    if (!S.settings.deloadRemind || !ds) { Android.cancelReminder(); return; }
-    const at = pdate(ds.isWeek ? ds.afterDate : ds.nextDate); at.setHours(8, 0, 0, 0);
+    const c = S.settings.cycle, i = weekStarted() && GL.weekInfo(c, dkey());
+    if (!S.settings.deloadRemind || !i) { Android.cancelReminder(); return; }
+    const at = pdate(GL.weekStart(c, i.isDeload ? i.week + c.block : i.nextDeloadWeek)); at.setHours(8, 0, 0, 0);
     Android.scheduleReminder(+at);
   } catch (e) {}
 }
 function deloadReminder() {
-  const st = S.settings, ds = deloadStatus();
-  if (!st.deloadRemind || st.deloadOn || !ds || !ds.isWeek || st.deloadDismissed === monday(dkey())) return '';
-  return `<div class="notice warn"><b>Hey, es wäre mal wieder Zeit für einen Deload 💪</b>
-    <p>Wie fühlst du dich? Bist du platt, zwicken Gelenke oder stagniert die Leistung, gönn dir diese Woche den Deload. Fühlst du dich top, kannst du ihn auch auslassen.</p>
-    <div class="two"><button class="btn warnb" data-a="deloadyes">Deload starten</button><button class="btn" data-a="deloadno">Fühl mich gut</button></div></div>`;
+  const st = S.settings, i = weekNow();
+  if (!st.deloadRemind || !weekStarted() || !i.isDeload || st.deloadDismissed === monday(dkey()) || st.deloadAck === monday(dkey())) return '';
+  return `<div class="notice warn"><b>Hey, Deload-Woche 💪 Wie fühlst du dich?</b>
+    <p>Diese Woche rechnet die App automatisch leichter: Sätze halbiert, −10 % Gewicht, RIR 3–4, kein Top Set. Fühlst du dich richtig gut, kannst du ihn diesmal auslassen.</p>
+    <div class="two"><button class="btn warnb" data-a="deloadyes">Deload machen</button><button class="btn" data-a="deloadno">Fühl mich gut</button></div></div>`;
 }
 function deloadCard() {
-  const st = S.settings, c = st.cycle, ds = deloadStatus();
+  const st = S.settings, i = weekNow(), dl = deloadNow();
   let txt, bar = '';
   if (st.deloadOn) {
-    const days = c.deloadStart ? Math.floor((pdate(dkey()) - pdate(c.deloadStart)) / DAY) : 0;
-    txt = `<b class="warn">Deload aktiv · Tag ${days + 1} von 7</b><small>−${st.deload.setsPct}% Sätze · −${st.deload.repsPct}% Wdh. · −${st.deload.weightPct}% Gewicht</small>`;
-  } else if (!ds) {
-    txt = `<b>Deload</b><small>Startet mit deinem ersten Training. Erster Deload nach ${c.firstBlock} Wochen.</small>`;
+    const days = st.cycle.deloadStart ? Math.floor((pdate(dkey()) - pdate(st.cycle.deloadStart)) / DAY) : 0;
+    txt = `<b class="warn">Deload aktiv · Tag ${days + 1} von 7</b><small>${phaseText(i, true)}</small>`;
+  } else if (!weekStarted()) {
+    txt = `<b>Programm</b><small>Startet mit deinem ersten Training: ${st.cycle.reentry} Wochen Wiedereinstieg, dann Blöcke à ${st.cycle.block} Wochen mit Deload in Woche ${st.cycle.block}.</small>`;
   } else {
-    txt = `<b>Deload · Woche ${ds.weekInBlock} von ${ds.blockLen}</b><small>${ds.isWeek ? 'Diese Woche ist Deload-Woche' : `Nächster in ${plural(ds.dueIn, 'Woche', 'Wochen')} · ab ${fdate(ds.nextDate, false)}`}</small>`;
-    bar = `<div class="bar"><i style="width:${Math.min(100, ds.weekInBlock / ds.blockLen * 100)}%;${ds.isWeek ? 'background:var(--warn)' : ''}"></i></div>`;
+    txt = `<b class="${dl ? 'warn' : ''}">Woche ${i.week}${dl ? ' · Deload' : i.phase === 'reentry' ? ' · Wiedereinstieg' : ''}</b><small>${phaseText(i, dl)}</small>`;
+    const pos = i.phase === 'reentry' ? i.reW / st.cycle.reentry : i.blockWeek / st.cycle.block;
+    bar = `<div class="bar"><i style="width:${Math.min(100, pos * 100)}%;${dl ? 'background:var(--warn)' : i.phase === 'reentry' ? 'background:var(--blue)' : ''}"></i></div>`;
   }
   return `<div class="card deload ${st.deloadOn ? 'on' : ''}"><div class="ri" style="padding:0"><div class="ri-l tap" data-a="deloadinfo">${txt}</div><div class="ri-c"><label class="switch w"><input type="checkbox" data-a="deload" ${st.deloadOn ? 'checked' : ''}><span></span></label></div></div>${bar}</div>`;
 }
 function viewDeloadInfo() {
   const d = S.settings.deload, c = S.settings.cycle;
   const h = `<div class="card"><h3>So rechnet die App</h3>
-    <p class="info">Erster Deload nach <b>${c.firstBlock} Wochen</b>, danach alle <b>${c.block} Wochen</b> (${c.block - 1} Wochen Training + 1 Woche Deload), immer gleich ab deinem Zyklus-Start. Der Schalter verschiebt den Plan nicht.</p>
-    <p class="info">Im Deload: <b>−${d.setsPct}% Arbeitssätze</b>, <b>−${d.repsPct}% Wdh./Zeit</b>, <b>−${d.weightPct}% Gewicht</b> (gerundet auf ${fmt(S.settings.step)} kg). Aufwärmsätze bleiben gleich. Deload-Trainings zählen nicht als „letztes Mal“.</p></div>
-  <div class="card"><h3>Warum so?</h3>
-    <p class="info"><b>Wie oft:</b> Üblich sind Deloads alle <b>4–8 Wochen</b> für <b>1 Woche</b> (Expertenbefragung Bell et al., 2023). 13 Wochen ist für hartes Training eher lang.</p>
-    <p class="info"><b>Wiedereinstieg:</b> Kraft kommt dank Muscle Memory schnell zurück, und anfangs ist die Ermüdung niedriger. Deshalb ist der erste Block länger. Die ersten 2 Wochen mit ca. 60–70% der alten Gewichte und 3–4 RIR starten.</p>
-    <p class="info"><b>Was reduzieren:</b> Vor allem das Volumen (30–50% weniger), das Gewicht nur leicht. So erholst du dich, ohne Kraft zu verlieren.</p>
-    <p class="info"><b>Früher deloaden:</b> wenn du 2 Einheiten in Folge schwächer bist, Gelenke zwicken oder du dauerhaft platt bist.</p></div>
+    <p class="info"><b>Woche 1–${c.reentry} Wiedereinstieg:</b> W1 2 Arbeitssätze, RIR 3, Top-Set-Übungen nur 3×5 leicht · W2 normale Sätze, RIR 2–3, weiter 3×5 · W3 RIR 2, Top Sets erlaubt · W4 normal.</p>
+    <p class="info"><b>Danach Blöcke à ${c.block} Wochen</b>, Woche ${c.block} ist Deload: Sätze halbiert (aufgerundet), −${d.weightPct}% Gewicht, RIR 3–4, kein Top Set. Deload-Trainings zählen nicht für die Progression.</p>
+    <p class="info"><b>Progression:</b> Top Set oberes Ende erreicht → nächstes Mal + Schrittweite der Übung. Alle anderen Sätze: erst wenn alle Arbeitssätze oben sind. Zweimal hintereinander unteres Ende verpasst → Vorschlag −10 %. Back-off = Top Set × Faktor. Aufwärmen in % vom Top Set bzw. Arbeitsgewicht, auf 2,5 kg gerundet, Langhantel mind. 20 kg.</p>
+    <p class="info">Der Schalter startet zusätzlich einen Deload außer der Reihe (7 Tage), der Wochenplan verschiebt sich nicht.</p></div>
   <div class="sec">Einstellungen</div>
   <div class="card list">
-    ${rowItem('Erster Deload nach', stepper('dset', 'cycle.firstBlock', c.firstBlock + ' Wo.'))}
-    ${rowItem('Danach alle', stepper('dset', 'cycle.block', c.block + ' Wo.'))}
-    ${rowItem('Weniger Sätze', stepper('dset', 'deload.setsPct', d.setsPct + '%'))}
-    ${rowItem('Weniger Wdh./Zeit', stepper('dset', 'deload.repsPct', d.repsPct + '%'))}
-    ${rowItem('Weniger Gewicht', stepper('dset', 'deload.weightPct', d.weightPct + '%'))}
+    ${rowItem('Wiedereinstieg', stepper('dset', 'cycle.reentry', c.reentry + ' Wo.'))}
+    ${rowItem('Blocklänge (inkl. Deload)', stepper('dset', 'cycle.block', c.block + ' Wo.'))}
+    ${rowItem('Deload: weniger Gewicht', stepper('dset', 'deload.weightPct', d.weightPct + '%'))}
     ${rowItem('Erinnerung', toggle('remindset', '', S.settings.deloadRemind), 'In der App und als Push')}
-    ${rowItem('Zyklus-Start', `<input class="f sm" type="date" data-a="cyclestart" value="${c.start || ''}">`)}
-  </div>
-  <button class="btn block" data-a="deloadreset">Standardwerte</button>`;
-  return ['Deload', h];
+    ${rowItem('Programmstart (Woche 1)', `<input class="f sm" type="date" data-a="cyclestart" value="${c.start || ''}">`)}
+  </div>`;
+  return ['Programm & Deload', h];
 }
-const DSET = { 'cycle.firstBlock': [1, 2, 20], 'cycle.block': [1, 2, 20], 'deload.setsPct': [5, 0, 80], 'deload.repsPct': [5, 0, 80], 'deload.weightPct': [5, 0, 50] };
+const DSET = { 'cycle.reentry': [1, 0, 8], 'cycle.block': [1, 3, 12], 'deload.weightPct': [5, 0, 30] };
 
 // ================= Übungen =================
+const MUSCLES = ['Brust', 'Schulter vorne', 'Schulter seitlich', 'Schulter hinten', 'Trizeps', 'Rücken', 'Bizeps', 'Unterarme', 'Trapez', 'Nacken', 'Quads', 'Beinbeuger', 'Po', 'Waden', 'Bauch'];
+const STEPS = [1, 1.25, 2, 2.5, 5];
+const exStep = ex => ex.step || S.settings.step;
 function exerciseEditor(id, onSave) {
   const e = id ? S.exercises.find(x => x.id === id) : null;
-  const dr = e ? { ...e } : { name: '', mode: 'reps', load: 'weight', note: '' };
+  const dr = e ? { ...e, muscles: { ...(e.muscles || {}) } } : { name: '', mode: 'reps', load: 'weight', note: '', step: S.settings.step, barbell: false, perLeg: false, muscles: {} };
   const draw = () => {
     const hint = { weight: 'z.B. Bankdrücken, Kurzhantel, Maschine', bw: 'z.B. Liegestütze, Plank', bwplus: 'z.B. Klimmzüge oder Dips mit Zusatzgewicht' }[dr.load];
+    const mchip = m => { const v = dr.muscles[m] || 0; return `<button class="chip ${v === 1 ? 'on' : v ? 'half' : ''}" data-a="exmus" data-v="${m}">${m}${v ? ' ' + fmt(v, 1) : ''}</button>`; };
     modal(`<h3>${e ? 'Übung bearbeiten' : 'Neue Übung'}</h3>
       <label class="lbl">Name</label><input class="f" id="mExN" value="${esc(dr.name)}" placeholder="z.B. Bankdrücken">
       <label class="lbl">Gemessen in</label>${seg('exmode', [['reps', 'Wiederholungen'], ['time', 'Zeit (Sek.)']], dr.mode)}
       <label class="lbl">Gewicht</label>${seg('exload', [['weight', 'Gewicht'], ['bw', 'Körper'], ['bwplus', 'Körper + kg']], dr.load)}
       <div class="hint">${hint}</div>
-      <label class="lbl">Notiz (optional)</label><input class="f" id="mExNote" value="${esc(dr.note || '')}" placeholder="z.B. Sitz Stufe 4">`,
+      ${dr.load !== 'bw' ? `<label class="lbl">Schrittweite für Steigerungen</label>${seg('exstep', STEPS.map(v => [String(v), fmt(v, 2) + ' kg']), String(dr.step))}` : ''}
+      <div class="list">
+        ${dr.load === 'weight' ? rowItem('Langhantel', `<label class="switch"><input type="checkbox" data-a="exbar" ${dr.barbell ? 'checked' : ''}><span></span></label>`, 'Aufwärmen mindestens 20 kg') : ''}
+        ${rowItem('Pro Bein / pro Seite', `<label class="switch"><input type="checkbox" data-a="exleg" ${dr.perLeg ? 'checked' : ''}><span></span></label>`, 'z.B. Ausfallschritte')}
+      </div>
+      <label class="lbl">Muskeln (Tipp: 1 = Hauptmuskel, 0,5 = hilft mit)</label><div class="chips">${MUSCLES.map(mchip).join('')}</div>
+      <label class="lbl">Notiz (optional, gilt überall)</label><input class="f" id="mExNote" value="${esc(dr.note || '')}" placeholder="z.B. Sitz Stufe 4">`,
       [e ? { l: 'Löschen', c: 'danger', f: () => { deleteExercise(e); return false; } } : { l: 'Abbrechen' },
        { l: 'Speichern', c: 'pri', f: () => {
          const name = $('#mExN').value.trim();
@@ -425,13 +427,18 @@ function exerciseEditor(id, onSave) {
          if (S.exercises.some(x => x.name.toLowerCase() === name.toLowerCase() && x.id !== (e && e.id) && !x.archived)) { toast('Diese Übung gibt es schon'); return false; }
          let t = e;
          if (!t) { t = { id: uid() }; S.exercises.push(t); }
-         Object.assign(t, { name, mode: dr.mode, load: dr.load, note: $('#mExNote').value.trim() });
+         Object.assign(t, { name, mode: dr.mode, load: dr.load, note: $('#mExNote').value.trim(), step: dr.step, barbell: dr.load === 'weight' && dr.barbell, perLeg: dr.perLeg, muscles: dr.muscles });
          delete t.archived;
          saveNow();
          if (onSave) onSave(t); else render();
        } }]);
   };
-  exerciseEditor.set = (k, v) => { dr.name = $('#mExN').value; dr.note = $('#mExNote').value; dr[k] = v; draw(); };
+  exerciseEditor.set = (k, v) => {
+    dr.name = $('#mExN').value; dr.note = $('#mExNote').value;
+    if (k === 'muscle') { const c = dr.muscles[v] || 0; const n = c === 0 ? 1 : c === 1 ? 0.5 : 0; if (n) dr.muscles[v] = n; else delete dr.muscles[v]; }
+    else dr[k] = v;
+    draw();
+  };
   draw();
   if (!e) setTimeout(() => $('#mExN') && $('#mExN').focus(), 60);
 }
@@ -440,17 +447,17 @@ function deleteExercise(e) {
   const plans = S.plans.filter(p => p.items.some(i => i.exId === e.id));
   modal(`<h3>„${esc(e.name)}“ löschen?</h3><p class="info">${plans.length ? `Sie wird aus ${plural(plans.length, 'Plan', 'Plänen')} entfernt. ` : ''}${inHist ? 'Dein bisheriger Verlauf bleibt erhalten.' : ''}</p>`,
     [{ l: 'Abbrechen' }, { l: 'Löschen', c: 'danger', f: () => {
-      S.plans.forEach(p => p.items = p.items.filter(i => i.exId !== e.id));
+      S.plans.forEach(p => { p.items = p.items.filter(i => i.exId !== e.id); p.items.forEach(i => { if (i.alts) i.alts = i.alts.filter(a => a !== e.id); }); });
       if (inHist) e.archived = true; else S.exercises = S.exercises.filter(x => x !== e);
       saveNow(); render();
     } }]);
 }
-function exercisePicker(cb) {
+function exercisePicker(cb, title = 'Übung hinzufügen') {
   let q = '';
   const list = () => S.exercises.filter(e => !e.archived && e.name.toLowerCase().includes(q.toLowerCase())).sort((a, b) => a.name.localeCompare(b.name, 'de'));
   const items = () => list().map(e => `<div class="li tap" data-a="pickex" data-id="${e.id}"><div class="li-m"><b>${esc(e.name)}</b><small>${exTags(e)}</small></div><span class="chev">${IC.plus}</span></div>`).join('') || `<div class="empty small"><span>Nichts gefunden</span></div>`;
   const has = S.exercises.some(e => !e.archived);
-  modal(`<h3>Übung hinzufügen</h3>
+  modal(`<h3>${title}</h3>
     <button class="btn pri block" data-a="pickexnew">+ Neue Übung erstellen</button>
     ${has ? `<input class="f" id="mExQ" placeholder="Meine Übungen durchsuchen" style="margin-top:12px"><div class="list" id="mExL">${items()}</div>` : '<div class="hint">Du hast noch keine Übungen. Erstell deine erste, danach kannst du sie in jedem Plan wiederverwenden.</div>'}`, [{ l: 'Schließen' }]);
   exercisePicker.cb = cb;
@@ -465,7 +472,16 @@ function viewExerciseList() {
 }
 
 // ================= Pläne =================
+const DAYN = ['', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'];
+const todayDay = () => (new Date().getDay() + 6) % 7 + 1;
 function lastDone(planId) { const w = S.workouts.filter(w => w.planId === planId).sort((a, b) => b.start - a.start)[0]; return w ? w.start : null; }
+function planCard(p, today) {
+  const ld = lastDone(p.id);
+  return `<div class="card plan ${today ? 'today' : ''}"><div class="plan-m tap" data-a="editplan" data-id="${p.id}">${today ? '<span class="pill a">Heute</span>' : ''}<b>${p.day ? `<span class="day">${DAYN[p.day]}</span>` : ''}${esc(p.name || 'Ohne Namen')}</b>
+    <small>${plural(p.items.length, 'Übung', 'Übungen')}${ld ? ' · zuletzt ' + fdate(ld, false) : ''}</small>
+    ${p.items.length ? `<span class="plan-ex">${p.items.map(i => esc(exName(i.exId))).join(' · ')}</span>` : ''}</div>
+    <div class="plan-a"><button class="iconbtn ghost" data-a="planmenu" data-id="${p.id}" aria-label="Menü">${IC.more}</button><button class="btn pri sm" data-a="start" data-id="${p.id}">Start</button></div></div>`;
+}
 function viewTraining() {
   let h = apkBanner() + backupBanner() + restoreCard() + deloadReminder();
   if (S.active) {
@@ -476,27 +492,32 @@ function viewTraining() {
   h += seg('tseg', [['plans', 'Pläne'], ['exercises', 'Übungen']], ui.trainSeg);
   if (ui.trainSeg === 'exercises') return ['Training', h + viewExerciseList()];
   if (!S.plans.length) h += `<div class="card">${empty('Noch keine Pläne', 'Erstelle deinen ersten Trainingsplan. Übungen legst du direkt dabei an.')}</div>`;
-  S.plans.forEach(p => {
-    const ld = lastDone(p.id);
-    h += `<div class="card plan"><div class="plan-m tap" data-a="editplan" data-id="${p.id}"><b>${esc(p.name || 'Ohne Namen')}</b>
-      <small>${plural(p.items.length, 'Übung', 'Übungen')}${ld ? ' · zuletzt ' + fdate(ld, false) : ''}</small>
-      ${p.items.length ? `<span class="plan-ex">${p.items.map(i => esc(exName(i.exId))).join(' · ')}</span>` : ''}</div>
-      <div class="plan-a"><button class="iconbtn ghost" data-a="planmenu" data-id="${p.id}" aria-label="Menü">${IC.more}</button><button class="btn pri sm" data-a="start" data-id="${p.id}">Start</button></div></div>`;
-  });
+  const td = todayDay(), plans = S.plans.slice().sort((a, b) => (a.day || 9) - (b.day || 9));
+  const today = plans.find(p => p.day === td);
+  if (today) h += planCard(today, true);
+  else if (td === 7 && plans.some(p => p.day)) h += `<div class="card"><b>Heute ist Ruhetag</b><p class="info" style="margin-top:4px">Erholung gehört zum Training. Morgen geht's weiter.</p></div>`;
+  plans.filter(p => p !== today).forEach(p => { h += planCard(p, false); });
   h += `<div class="two"><button class="btn" data-a="newplan">+ Neuer Plan</button><button class="btn" data-a="start" data-id="">Freies Training</button></div>`;
   return ['Training', h];
 }
-function newItem(exId) { return { id: uid(), exId, sets: [{ t: 'n', goal: isTime(exOf(exId)) ? '30-45' : '8-10', rest: S.settings.rest }] }; }
+function newItem(exId) { return { id: uid(), exId, rir: '', note: '', alts: [], ss: false, sets: [{ t: 'n', goal: isTime(exOf(exId)) ? '30-45' : '8-10', rest: S.settings.rest }] }; }
 const uniq = a => [...new Set(a)];
+/** Satz-Beschriftungen: W, W2 … / T (Top Set) / B, B2 (Back-off) / 1, 2 … */
+function setLabels(sets) { let w = 0, n = 0, b = 0; return sets.map(s => s.t === 'w' ? 'W' + (++w > 1 ? w : '') : s.t === 'top' ? 'T' : s.t === 'bo' ? 'B' + (++b > 1 ? b : '') : String(++n)); }
+const badgeCls = t => t === 'w' ? 'w' : t === 'top' ? 'top' : t === 'bo' ? 'bo' : '';
+const unitOf = ex => (isTime(ex) ? 's' : 'Wdh.') + (ex.perLeg ? '/Bein' : '');
 function itemSum(it) {
   const ex = exOf(it.exId), w = it.sets.filter(s => s.t === 'w'), n = it.sets.filter(s => s.t !== 'w');
+  const top = n.filter(s => s.t === 'top').length, bo = n.filter(s => s.t === 'bo').length;
   const goals = uniq(n.map(s => s.goal)), rests = uniq(n.map(s => s.rest));
-  return `${w.length ? w.length + ' Aufwärm · ' : ''}${plural(n.length, 'Satz', 'Sätze')}${n.length ? ` × ${goals.length <= 3 ? goals.map(esc).join(' / ') : 'versch.'} ${isTime(ex) ? 's' : 'Wdh.'} · Pause ${rests.length === 1 ? mmss(rests[0]) : 'individuell'}` : ''}`;
+  const kind = top ? `Top Set${bo ? ' + ' + bo + ' Back-off' : ''}` : plural(n.length, 'Satz', 'Sätze');
+  return `${w.length ? w.length + ' Aufwärm · ' : ''}${kind}${n.length ? ` × ${goals.length <= 3 ? goals.map(esc).join(' / ') : 'versch.'} ${unitOf(ex)}${it.rir ? ' · RIR ' + esc(it.rir) : ''} · Pause ${rests.length === 1 ? mmss(rests[0]) : 'individuell'}` : ''}${it.ss ? ' · Supersatz' : ''}`;
 }
 function viewPlanEdit(id) {
   const p = S.plans.find(x => x.id === id);
   if (!p) { stack.pop(); return viewTraining(); }
-  let h = `<label class="lbl">Name des Plans</label><input class="f" data-a="pname" value="${esc(p.name)}" placeholder="z.B. Push, Oberkörper A">`;
+  let h = `<label class="lbl">Name des Plans</label><input class="f" data-a="pname" value="${esc(p.name)}" placeholder="z.B. Push, Oberkörper A">
+    <label class="lbl">Wochentag</label>${seg('pday', [['0', '–'], ...[1, 2, 3, 4, 5, 6, 7].map(d => [String(d), DAYN[d]])], String(p.day || 0))}`;
   h += `<div class="sec">Übungen</div>`;
   if (!p.items.length) h += `<div class="card">${empty('Noch leer', 'Füge deine erste Übung hinzu.')}</div>`;
   else h += `<div class="card list">${p.items.map((it, i) => `<div class="li tap" data-a="itemedit" data-id="${it.id}"><span class="num">${i + 1}</span><div class="li-m"><b>${esc(exName(it.exId))}</b><small>${itemSum(it)}</small></div><span class="chev">${IC.chev}</span></div>`).join('')}</div>`;
@@ -506,79 +527,75 @@ function viewPlanEdit(id) {
   return [p.name || 'Neuer Plan', h];
 }
 function curPlan() { return S.plans.find(p => p.id === topView().id); }
+/** Anzeige im kg-Feld der Vorlage: feste kg, Prozent (Aufwärmen) oder Faktor (Back-off) */
+function tplKgText(st) {
+  if (st.t === 'bo' && st.factor != null && st.kg == null) return fmt(st.factor * 100, 2) + '%';
+  if (st.pct != null) return fmt(st.pct, 2) + '%';
+  return st.kg === '' || st.kg == null ? '' : fmt(num(st.kg), 2);
+}
 function itemEditor(itemId) {
   const p = curPlan(), it = p && p.items.find(i => i.id === itemId); if (!it) return;
-  const ex = exOf(it.exId), i = p.items.indexOf(it);
+  const ex = exOf(it.exId), i = p.items.indexOf(it), labs = setLabels(it.sets);
   itemEditor.it = it;
-  let wn = 0, nn = 0;
-  const rows = it.sets.map((st, si) => {
-    const lab = st.t === 'w' ? 'W' + (++wn > 1 ? wn : '') : ++nn;
-    return `<button class="badge ${st.t === 'w' ? 'w' : ''}" data-a="tsw" data-s="${si}">${lab}</button>
-      ${hasKg(ex) ? `<input class="tgoal" inputmode="none" data-kp="dec" data-a="tkg" data-s="${si}" value="${st.kg === '' || st.kg == null ? '' : fmt(num(st.kg), 2)}" placeholder="–">` : ''}
+  const rows = it.sets.map((st, si) => `<button class="badge ${badgeCls(st.t)}" data-a="tsw" data-s="${si}">${labs[si]}</button>
+      ${hasKg(ex) ? `<input class="tgoal" inputmode="none" data-kp="kgpct" data-a="tkg" data-s="${si}" value="${tplKgText(st)}" placeholder="–">` : ''}
       <input class="tgoal" inputmode="none" data-kp="range" data-a="tgoal" data-s="${si}" value="${esc(st.goal)}" placeholder="${isTime(ex) ? '30' : '8-10'}">
       <div class="stepper"><button data-a="trest" data-s="${si}" data-d="-1">−</button><span>${st.rest ? mmss(st.rest) : 'Aus'}</span><button data-a="trest" data-s="${si}" data-d="1">+</button></div>
-      <button class="iconbtn ghost x" data-a="tdel" data-s="${si}" ${it.sets.length < 2 ? 'disabled' : ''} aria-label="Satz entfernen">✕</button>`;
-  }).join('');
-  modal(`<h3>${esc(ex.name)}</h3><div class="sub">${exTags(ex)} · <span class="tap acc" data-a="itexedit" data-id="${ex.id}">Name / Typ ändern</span></div>
+      <button class="iconbtn ghost x" data-a="tdel" data-s="${si}" ${it.sets.length < 2 ? 'disabled' : ''} aria-label="Satz entfernen">✕</button>`).join('');
+  const alts = (it.alts || []).map(a => `<span class="chip on">${esc(exName(a))} <b class="tap" data-a="taltdel" data-id="${a}">✕</b></span>`).join('');
+  modal(`<h3>${esc(ex.name)}</h3><div class="sub">${exTags(ex)} · <span class="tap acc" data-a="itexedit" data-id="${ex.id}">Übung bearbeiten</span></div>
     <div class="tsets ${hasKg(ex) ? 'kg' : ''}"><span>Satz</span>${hasKg(ex) ? `<span>${kgHead(ex)}</span>` : ''}<span>${isTime(ex) ? 'Sek.' : 'Wdh.'}</span><span>Pause</span><span></span>${rows}</div>
     <button class="btn block" data-a="tadd" style="margin-top:10px">+ Satz</button>
-    <div class="hint">Tipp auf die Nummer: Aufwärmsatz (W) oder normaler Satz. ${isTime(ex) ? 'Sekunden als Zahl oder Bereich, z.B. 30-45.' : 'Wdh. als Zahl oder Bereich, z.B. 8-10.'}${hasKg(ex) ? ' Gewicht ist optional: Im Training wird sonst das Gewicht vom letzten Mal vorgeschlagen. Änderst du es hier, gilt beim nächsten Training dein neuer Wert.' : ''}</div>
+    <div class="hint">Tipp auf die Satzart: <b>1</b> normal → <b>W</b> Aufwärmen → <b>T</b> Top Set → <b>B</b> Back-off. kg fest (z.B. 20) oder in Prozent (z.B. 55%): beim Aufwärmen vom Top Set bzw. Arbeitsgewicht, beim Back-off vom tatsächlichen Top Set. Leer = Vorschlag aus deinem letzten Training.</div>
+    <div class="list" style="margin-top:6px">
+      ${rowItem('RIR-Ziel', `<input class="f sm c" inputmode="none" data-kp="range" data-a="trir" value="${esc(it.rir || '')}" placeholder="z.B. 1">`, 'Wiederholungen im Tank')}
+      ${rowItem('Supersatz mit nächster Übung', `<label class="switch"><input type="checkbox" data-a="tss" ${it.ss ? 'checked' : ''}><span></span></label>`, 'Pause erst nach der nächsten Übung')}
+    </div>
+    <label class="lbl">Notiz im Plan (im Training sichtbar)</label><input class="f" data-a="tnote" value="${esc(it.note || '')}" placeholder="z.B. Sicherheitsablagen">
+    <label class="lbl">Alternativen (im Training per Tipp tauschen)</label><div class="chips">${alts}<button class="chip" data-a="taltadd">+ Alternative</button></div>
     <div class="two"><button class="btn" data-a="imove" data-s="-1" ${i === 0 ? 'disabled' : ''}>↑ Nach oben</button><button class="btn" data-a="imove" data-s="1" ${i === p.items.length - 1 ? 'disabled' : ''}>↓ Nach unten</button></div>`,
     [{ l: 'Aus Plan entfernen', c: 'danger', f: () => { p.items = p.items.filter(x => x !== it); saveNow(); render(); } }, { l: 'Fertig', c: 'pri', f: () => { saveNow(); render(); } }]);
 }
 
 // ================= Training =================
-/** Letzte Sätze einer Übung, bevorzugt aus einem normalen (nicht Deload) Training */
-function lastSets(exId, includeDeload) {
-  const ws = S.workouts.filter(w => includeDeload || !w.deload).sort((a, b) => b.start - a.start);
-  for (const w of ws) { const it = w.items.find(i => i.exId === exId); if (it && it.sets.length) return { w, warm: it.sets.filter(s => s.t === 'w'), work: it.sets.filter(s => s.t !== 'w') }; }
-  return includeDeload ? null : lastSets(exId, true);
+/** Frühere Einheiten einer Übung, neueste zuerst */
+function historyOf(exId) {
+  return S.workouts.filter(w => w.items.some(i => i.exId === exId)).sort((a, b) => b.start - a.start)
+    .map(w => ({ start: w.start, deload: !!w.deload, sets: w.items.filter(i => i.exId === exId).flatMap(i => i.sets) }));
 }
+function lastSets(exId, includeDeload) {
+  const h = historyOf(exId).filter(x => includeDeload || !x.deload)[0] || (includeDeload ? null : historyOf(exId)[0]);
+  return h ? { w: h, warm: h.sets.filter(s => s.t === 'w'), work: h.sets.filter(s => s.t !== 'w') } : null;
+}
+const exCfg = ex => ({ load: ex.load, mode: ex.mode, step: exStep(ex), barbell: !!ex.barbell });
 /** Vorlage einer laufenden Übung (auch für Trainings aus älteren Versionen) */
 function itTpl(it) {
   if (it.tpl) return it.tpl;
   return it.sets.map(st => ({ t: st.t, goal: st.goal || it.target || '8-10', rest: st.rest ?? (st.t === 'w' ? (it.warmRest || 0) : (it.rest ?? 120)) }));
 }
-/** Gewicht aus der Vorlage gilt, wenn es nach dem letzten Training gesetzt wurde (oder es noch keins gibt) */
-const tplKgWins = (t, lastStart) => t.kg !== '' && t.kg != null && isFinite(num(t.kg)) && (t.kgAt || 0) > (lastStart || 0);
-function workSet(ex, base, i, t, deload, lastStart) {
-  const d = S.settings.deload, step = S.settings.step, [rmin] = range(t.goal);
-  const b = base && (base.work[i] || base.work[base.work.length - 1]);
-  let kg = b ? num(b.kg) : NaN, reps = b ? num(b.reps) : rmin;
-  if (tplKgWins(t, lastStart)) { kg = num(t.kg); if (!deload) { reps = b ? reps : rmin; } else { kg = kg > 0 ? roundStep(kg * (1 - d.weightPct / 100), step) : kg; reps = Math.max(1, Math.round(reps * (1 - d.repsPct / 100))); } return { t: 'n', kg: hasKg(ex) ? kg : '', reps: isFinite(reps) ? reps : '', rir: '', goal: t.goal, rest: t.rest, done: false }; }
-  if (base && base.w.deload && !deload) { if (kg > 0) kg = roundStep(kg / (1 - d.weightPct / 100), step); reps = Math.max(reps, rmin); }
-  if (deload && !(base && base.w.deload)) { if (kg > 0) kg = roundStep(kg * (1 - d.weightPct / 100), step); reps = Math.max(1, Math.round(reps * (1 - d.repsPct / 100))); }
-  return { t: 'n', kg: hasKg(ex) && isFinite(kg) ? kg : '', reps: isFinite(reps) ? reps : '', rir: '', goal: t.goal, rest: t.rest, done: false };
-}
+/** Sätze für eine Übung im Training nach Plan, Historie, Woche und Deload */
 function buildItem(pi, deload) {
-  const ex = exOf(pi.exId), base = lastSets(pi.exId), tpl = pi.sets.map(x => ({ ...x }));
-  const any = lastSets(pi.exId, true), lastStart = any ? any.w.start : 0;
-  const nWork = tpl.filter(x => x.t !== 'w').length;
-  const keep = deload ? Math.max(1, Math.round(nWork * (1 - S.settings.deload.setsPct / 100))) : nWork;
-  let wi = 0, ni = 0; const sets = [];
-  for (const t of tpl) {
-    if (t.t === 'w') { const b = base && (base.warm[wi] || base.warm[base.warm.length - 1]); wi++; sets.push({ t: 'w', kg: hasKg(ex) ? (tplKgWins(t, lastStart) ? num(t.kg) : (b ? b.kg : '')) : '', reps: b ? b.reps : range(t.goal)[0], goal: t.goal, rest: t.rest, done: false }); }
-    else { if (ni < keep) sets.push(workSet(ex, base, ni, t, deload, lastStart)); ni++; }
-  }
-  return { exId: pi.exId, tpl, note: '', sets };
+  const ex = exOf(pi.exId), h = historyOf(pi.exId), tpl = pi.sets.map(x => ({ ...x }));
+  const r = GL.buildSession(exCfg(ex), tpl, h, { info: weekNow(), deload, deloadCfg: S.settings.deload, lastStart: h[0] ? h[0].start : 0 });
+  return { exId: pi.exId, alts: (pi.alts || []).slice(), tpl, rir: pi.rir || '', pnote: pi.note || '', ss: !!pi.ss, note: '', hint: r.hint, phase: r.note, sets: r.sets };
 }
 function applyDeloadToActive(on) {
   const a = S.active; if (!a) return;
   a.deload = on;
   a.items.forEach(it => {
-    const tpl = itTpl(it); it.tpl = tpl;
-    const fresh = buildItem({ exId: it.exId, sets: tpl }, on).sets.filter(x => x.t !== 'w');
-    const doneN = it.sets.filter(x => x.t !== 'w' && x.done);
-    it.sets = it.sets.filter(x => x.t === 'w').concat(doneN, fresh.slice(doneN.length));
+    const fresh = buildItem({ exId: it.exId, sets: itTpl(it) }, on);
+    const done = it.sets.filter(s => s.done);
+    it.hint = fresh.hint; it.phase = fresh.phase; it.tpl = itTpl(it);
+    it.sets = done.length ? done.concat(fresh.sets.filter(s => s.t !== 'w').slice(done.filter(s => s.t !== 'w').length)) : fresh.sets;
   });
 }
 function startWorkout(planId) {
   if (S.active) { toast('Es läuft schon ein Training'); stack = []; go('session'); return; }
   const p = S.plans.find(x => x.id === planId);
   if (p && !p.items.length) { toast('Der Plan hat noch keine Übungen'); return; }
-  const deload = S.settings.deloadOn;
   if (!S.settings.cycle.start) { S.settings.cycle.start = dkey(); setTimeout(syncReminder, 0); }
-  S.active = { id: uid(), planId: p ? p.id : null, name: p ? (p.name || 'Training') : 'Freies Training', start: Date.now(), deload, items: p ? p.items.map(pi => buildItem(pi, deload)) : [], timer: null };
+  const deload = deloadNow();
+  S.active = { id: uid(), planId: p ? p.id : null, name: p ? (p.name || 'Training') : 'Freies Training', start: Date.now(), deload, week: weekNow().week, items: p ? p.items.map(pi => buildItem(pi, deload)) : [], timer: null };
   saveNow(); keepAwake(true);
   stack = []; go('session');
 }
@@ -586,52 +603,44 @@ function keepAwake(on) { try { if (NATIVE) Android.keepScreenOn(on && S.settings
 function prevText(exId) {
   const b = lastSets(exId, true), ex = exOf(exId);
   if (!b) return 'Zum ersten Mal';
-  return `${fdate(b.w.start, false)}${b.w.deload ? ' (Deload)' : ''}: ` + b.work.map(s => setTxt(ex, s)).join(' · ');
+  const labs = setLabels(b.work);
+  return `${fdate(b.w.start, false)}${b.w.deload ? ' (Deload)' : ''}: ` + b.work.map((s, i) => (s.t === 'top' || s.t === 'bo' ? labs[i] + ' ' : '') + setTxt(ex, s)).join(' · ');
 }
 function lastNote(exId) { const ws = S.workouts.slice().sort((a, b) => b.start - a.start); for (const w of ws) { const it = w.items.find(i => i.exId === exId); if (it) return it.note ? { w, note: it.note } : null; } return null; }
-function suggestion(it, idx) {
-  const ex = exOf(it.exId);
-  if (S.active.deload || isTime(ex) || !hasKg(ex)) return '';
-  const b = lastSets(it.exId); if (!b || b.w.deload || !b.work.length) return '';
-  const tw = itTpl(it).filter(x => x.t !== 'w');
-  const [rmin, rmax] = range((tw[0] || {}).goal);
-  if (b.work.length >= Math.max(1, tw.length) && b.work.every((x, j) => num(x.reps) >= range((tw[j] || tw[0] || {}).goal)[1]) && it.sets.every(s => !s.done || s.t === 'w')) {
-    const cur = it.sets.find(s => s.t !== 'w'), kg = num(b.work[0].kg);
-    if (cur && num(cur.kg) > (kg || 0)) return '';
-    return `<button class="suggest" data-a="sugg" data-id="${idx}">↑ Letztes Mal überall ${rmax}+ Wdh. Jetzt +${fmt(S.settings.step)} kg und ${rmin} Wdh.?</button>`;
-  }
-  return '';
-}
 function sessHead(it, ex) {
-  const n = itTpl(it).filter(x => x.t !== 'w'); if (!n.length) return '';
-  const g = uniq(n.map(x => x.goal)), r = uniq(n.map(x => x.rest));
-  return `${g.length <= 3 ? g.map(esc).join(' / ') : 'versch.'} ${isTime(ex) ? 's' : 'Wdh.'} · Pause ${r.length === 1 ? mmss(r[0]) : 'individuell'}`;
+  const n = it.sets.filter(x => x.t !== 'w'); if (!n.length) return '';
+  const g = uniq(n.map(x => x.goal || '')), r = uniq(n.map(x => x.rest));
+  const rir = GL.rirTarget(it.rir, S.active.week ? weekNow() : null, S.active.deload);
+  return `${g.length <= 3 ? g.map(esc).join(' / ') : 'versch.'} ${unitOf(ex)}${rir ? ' · RIR ' + esc(rir) : ''} · Pause ${it.ss ? 'nach Supersatz' : r.length === 1 ? mmss(r[0]) : 'individuell'}`;
 }
 function viewSession() {
   const a = S.active;
   if (!a) { stack.pop(); return viewTraining(); }
-  const rirOn = S.settings.rir;
-  let h = `<div class="sbar"><span><span id="elapsed">${mmss((Date.now() - a.start) / 1000)}</span> · ${fdate(a.start, false)}</span>
+  const rirOn = S.settings.rir, wi = weekNow();
+  let h = `<div class="sbar"><span><span id="elapsed">${mmss((Date.now() - a.start) / 1000)}</span> · ${fdate(a.start, false)}${weekStarted() ? ' · Woche ' + wi.week : ''}</span>
     <label class="sdl ${a.deload ? 'on' : ''}">Deload <label class="switch w sm"><input type="checkbox" data-a="sdeload" ${a.deload ? 'checked' : ''}><span></span></label></label></div>`;
-  if (a.deload) h += `<div class="notice warn small">Deload-Training: weniger Sätze, Wdh. und Gewicht sind schon eingerechnet. Locker bleiben, 3–4 RIR.</div>`;
+  if (a.deload || wi.phase === 'reentry') h += `<div class="notice ${a.deload ? 'warn' : 'info'} small">${phaseText(wi, a.deload)}</div>`;
   if (!a.items.length) h += `<div class="card">${empty('Freies Training', 'Füge deine erste Übung hinzu.')}</div>`;
   a.items.forEach((it, idx) => {
-    const ex = exOf(it.exId), kg = hasKg(ex), rir = rirOn && !isTime(ex);
+    const ex = exOf(it.exId), kg = hasKg(ex), rir = rirOn && !isTime(ex), labs = setLabels(it.sets);
     const cols = `40px ${kg ? '1fr ' : ''}1fr ${rir ? '52px ' : ''}46px`;
-    let wn = 0, nn = 0;
-    h += `<div class="card ex"><div class="ex-h"><div class="ex-t"><b>${esc(ex.name)}</b><small>${sessHead(it, ex)}</small></div><button class="iconbtn ghost" data-a="exmenu" data-id="${idx}" aria-label="Menü">${IC.more}</button></div>
+    const prevSS = idx > 0 && a.items[idx - 1].ss;
+    h += `<div class="card ex ${it.ss ? 'ss1' : ''} ${prevSS ? 'ss2' : ''}">${it.ss && a.items[idx + 1] ? `<div class="sslab">Supersatz mit ${esc(exName(a.items[idx + 1].exId))} · Pause erst danach</div>` : ''}
+      <div class="ex-h"><div class="ex-t"><b>${esc(ex.name)}</b><small>${sessHead(it, ex)}</small></div><button class="iconbtn ghost" data-a="exmenu" data-id="${idx}" aria-label="Menü">${IC.more}</button></div>
+      ${it.alts && it.alts.length ? `<button class="altchip" data-a="salt" data-id="${idx}">⇄ ${esc(it.alts.map(exName).join(' / '))}</button>` : ''}
       <div class="ex-prev">${esc(prevText(it.exId))}</div>`;
+    if (it.phase) h += `<div class="hintchip info">${esc(it.phase)}</div>`;
+    if (it.hint) h += `<div class="hintchip ${it.hint.dir}">${it.hint.dir === 'up' ? '↑' : '↓'} ${esc(it.hint.text)}</div>`;
+    if (it.pnote) h += `<div class="note">📋 ${esc(it.pnote)}</div>`;
     if (ex.note) h += `<div class="note tap" data-a="snote" data-id="${idx}">📌 ${esc(ex.note)}</div>`;
     if (it.note) h += `<div class="note tap" data-a="snote" data-id="${idx}">📝 ${esc(it.note)}</div>`;
     else { const l = lastNote(it.exId); if (l) h += `<div class="note mut">📝 ${fdate(l.w.start, false)}: ${esc(l.note)}</div>`; }
-    h += suggestion(it, idx);
-    h += `<div class="sets" style="grid-template-columns:${cols}"><span>Satz</span>${kg ? `<span>${kgHead(ex)}</span>` : ''}<span>${valUnit(ex)}</span>${rir ? '<span class="tap blue" data-a="ririnfo">RIR ⓘ</span>' : ''}<span></span>`;
+    h += `<div class="sets" style="grid-template-columns:${cols}"><span>Satz</span>${kg ? `<span>${kgHead(ex)}</span>` : ''}<span>${valUnit(ex)}${ex.perLeg ? '/Bein' : ''}</span>${rir ? '<span class="tap blue" data-a="ririnfo">RIR ⓘ</span>' : ''}<span></span>`;
     it.sets.forEach((s, si) => {
-      const lab = s.t === 'w' ? 'W' + (++wn > 1 ? wn : '') : ++nn;
-      const c = `${s.t === 'w' ? 'w' : ''} ${s.done ? 'done' : ''}`;
-      h += `<button class="badge ${c}" data-a="stype" data-id="${idx}" data-s="${si}">${lab}</button>`;
-      if (kg) h += `<input class="${c}" inputmode="none" data-kp="dec" data-a="skg" data-id="${idx}" data-s="${si}" value="${s.kg === '' ? '' : fmt(num(s.kg), 2)}" placeholder="0">`;
-      h += `<input class="${c}" inputmode="none" data-kp="int" data-step="${isTime(ex) ? 5 : 1}" data-a="sreps" data-id="${idx}" data-s="${si}" value="${s.reps}" placeholder="0">`;
+      const c = `${badgeCls(s.t)} ${s.done ? 'done' : ''}`;
+      h += `<button class="badge ${c}" data-a="stype" data-id="${idx}" data-s="${si}">${labs[si]}</button>`;
+      if (kg) h += `<input class="${c}" inputmode="none" data-kp="dec" data-step="${exStep(ex)}" data-a="skg" data-id="${idx}" data-s="${si}" value="${s.kg === '' ? '' : fmt(num(s.kg), 2)}" placeholder="0">`;
+      h += `<input class="${c}" inputmode="none" data-kp="int" data-step="${isTime(ex) ? 5 : 1}" data-a="sreps" data-id="${idx}" data-s="${si}" value="${s.reps}" placeholder="${esc(s.goal || '0')}">`;
       if (rir) h += s.t === 'w' ? '<span></span>' : `<input class="rir ${c}" inputmode="none" data-kp="int" maxlength="2" data-a="srir" data-id="${idx}" data-s="${si}" value="${s.rir ?? ''}" placeholder="–">`;
       h += `<button class="chk ${c}" data-a="sdone" data-id="${idx}" data-s="${si}" aria-label="Erledigt">${IC.check}</button>`;
     });
@@ -641,6 +650,15 @@ function viewSession() {
     <button class="btn pri block" data-a="finish">Training beenden</button>
     <button class="btn danger block" data-a="discard">Training verwerfen</button>`;
   return [a.name, h];
+}
+/** Top Set / erster Arbeitssatz geändert: Aufwärmen und Back-off live nachziehen */
+function recalcLive(idx) {
+  const it = S.active.items[idx], ex = exOf(it.exId);
+  GL.recalc(it.sets, exCfg(ex));
+  it.sets.forEach((s, si) => {
+    const inp = document.querySelector(`[data-a=skg][data-id="${idx}"][data-s="${si}"]`);
+    if (inp && inp !== kpT && document.activeElement !== inp) inp.value = s.kg === '' ? '' : fmt(num(s.kg), 2);
+  });
 }
 const scoreSet = (ex, s, ts) => isTime(ex) || ex.load === 'bw' ? s.reps : e1rm(effKg(ex, s, ts), s.reps);
 function bestOf(exId) {
@@ -709,7 +727,8 @@ window.onAppResume = () => { if (!S) return; if (deloadAutoOff() && (!topView() 
 
 // ================= Verlauf =================
 function viewHistory() {
-  let h = seg('hseg', [['workouts', 'Trainings'], ['exercises', 'Übungen']], ui.histSeg);
+  let h = seg('hseg', [['workouts', 'Trainings'], ['exercises', 'Übungen'], ['muscles', 'Muskeln']], ui.histSeg);
+  if (ui.histSeg === 'muscles') return ['Verlauf', h + viewMuscles()];
   if (ui.histSeg === 'workouts') {
     const ws = S.workouts.slice().sort((a, b) => b.start - a.start);
     if (!ws.length) return ['Verlauf', h + `<div class="card">${empty('Noch keine Trainings', 'Hier landen alle deine Trainings.')}</div>`];
@@ -732,6 +751,20 @@ function viewHistory() {
     }).join('') + '</div>';
   }
   return ['Verlauf', h];
+}
+/** Arbeitssätze pro Muskel: diese Woche erledigt vs. laut Plan pro Woche */
+function viewMuscles() {
+  const byId = Object.fromEntries(S.exercises.map(e => [e.id, e]));
+  const wk = monday(dkey());
+  const done = GL.muscleSets(S.workouts.filter(w => monday(dkey(new Date(w.start))) === wk).flatMap(w => w.items), byId);
+  const planned = GL.muscleSets(S.plans.filter(p => p.day).flatMap(p => p.items), byId);
+  const ms = uniq([...Object.keys(planned), ...Object.keys(done)]).sort((a, b) => (planned[b] || 0) - (planned[a] || 0) || a.localeCompare(b, 'de'));
+  if (!ms.length) return `<div class="card">${empty('Noch keine Zuordnung', 'Weise deinen Übungen Muskeln zu (Übung bearbeiten), dann siehst du hier die Sätze pro Muskel.')}</div>`;
+  const rows = ms.map(m => {
+    const d = done[m] || 0, p = planned[m] || 0;
+    return `<div class="mrow"><div class="mrow-h"><b>${esc(m)}</b><span><b>${fmt(d, 1)}</b> <span class="mut">/ ${fmt(p, 1)}</span></span></div><div class="bar"><i style="width:${p ? Math.min(100, d / p * 100) : d ? 100 : 0}%"></i></div></div>`;
+  }).join('');
+  return `<div class="card"><div class="hint" style="margin:0 0 6px">Arbeitssätze diese Woche (KW ${isoWeek(dkey())}) / laut Plan pro Woche. Hauptmuskel zählt 1, mithelfende Muskeln 0,5.</div>${rows}</div>`;
 }
 function exSeries(exId) {
   const ex = exOf(exId), out = [];
@@ -845,7 +878,7 @@ function backupBanner() {
 }
 /** Leere App (z.B. neu installiert): Wiederherstellen anbieten */
 function restoreCard() {
-  if (hasData() || !NATIVE) return '';
+  if (S.weights.length || S.workouts.length || !NATIVE) return '';
   return `<div class="card"><b>Neu hier oder Handy gewechselt?</b><p class="info">Hast du schon eine Sicherung (GymLog-Backup.json, z.B. in Google Drive), hol dir damit alle Daten zurück.</p>
     <button class="btn pri block" data-a="import" style="margin-top:12px">Daten wiederherstellen</button></div>`;
 }
@@ -899,6 +932,8 @@ $('#modal').addEventListener('click', e => {
 });
 
 // ================= Aktionen =================
+const nextT = t => ({ n: 'w', w: 'top', top: 'bo', bo: 'n' })[t] || 'n';
+
 const sIt = el => S.active.items[+el.dataset.id];
 const A = {
   back: () => back(),
@@ -918,12 +953,12 @@ const A = {
   wedit: el => weightDialog(el.dataset.id),
   // Deload
   deload: el => { if (el.checked) { el.checked = false; askDeload(); } else setDeload(false); },
-  deloadyes: () => askDeload(),
-  deloadno: () => { S.settings.deloadDismissed = monday(dkey()); saveNow(); render(); toast('Alles klar, weiter wie gehabt 💪'); },
+  deloadyes: () => { S.settings.deloadAck = monday(dkey()); saveNow(); render(); },
+  deloadno: () => { S.settings.deloadDismissed = monday(dkey()); if (S.active && !S.active.items.some(i => i.sets.some(s => s.done))) applyDeloadToActive(false); saveNow(); render(); toast('Alles klar, diese Woche normal 💪'); },
   deloadinfo: () => go('deloadinfo'),
   dset: el => { const [a, b] = el.dataset.id.split('.'), [st, lo, hi] = DSET[el.dataset.id]; S.settings[a][b] = Math.min(hi, Math.max(lo, S.settings[a][b] + st * +el.dataset.s)); saveNow(); syncReminder(); render(); },
   remindset: el => { S.settings.deloadRemind = el.checked; saveNow(); syncReminder(); },
-  deloadreset: () => { const d = DEFAULTS().settings; S.settings.deload = d.deload; S.settings.cycle.firstBlock = d.cycle.firstBlock; S.settings.cycle.block = d.cycle.block; saveNow(); syncReminder(); render(); },
+  deloadreset: () => { S.settings.deload = { weightPct: 10, repsPct: 0, setsPct: 50 }; Object.assign(S.settings.cycle, { reentry: 4, block: 7 }); saveNow(); syncReminder(); render(); },
   // Übungen
   tseg: el => { ui.trainSeg = el.dataset.v; render(); },
   exnew: () => exerciseEditor(null),
@@ -955,7 +990,23 @@ const A = {
       [{ l: 'Abbrechen' }, { l: 'Löschen', c: 'danger', f: () => { S.plans = S.plans.filter(x => x !== p); saveNow(); if (topView() && topView().v === 'plan') stack.pop(); render(true); } }]);
   },
   iadd: () => { const pid = topView().id; exercisePicker(e => { const p = S.plans.find(x => x.id === pid), it = newItem(e.id); p.items.push(it); saveNow(); render(); itemEditor(it.id); }); },
-  tsw: el => { const st = itemEditor.it.sets[+el.dataset.s]; st.t = st.t === 'w' ? 'n' : 'w'; if (st.t === 'w' && st.rest === S.settings.rest) st.rest = S.settings.warmRest; else if (st.t === 'n' && st.rest === S.settings.warmRest) st.rest = S.settings.rest; saveNow(); itemEditor(itemEditor.it.id); },
+  tsw: el => {
+    const st = itemEditor.it.sets[+el.dataset.s]; st.t = nextT(st.t);
+    if (st.t === 'w' && st.rest === S.settings.rest) st.rest = S.settings.warmRest; else if (st.t === 'top' && st.rest === S.settings.warmRest) st.rest = S.settings.rest;
+    if (st.t === 'bo') { if (st.pct != null) { st.factor = st.pct / 100; } if (st.factor == null && st.kg == null) st.factor = 0.875; delete st.pct; }
+    else if (st.t !== 'w') { delete st.factor; delete st.pct; }
+    else delete st.factor;
+    saveNow(); itemEditor(itemEditor.it.id);
+  },
+  trir: () => {},
+  tss: el => { itemEditor.it.ss = el.checked; saveNow(); },
+  taltadd: () => { const it = itemEditor.it; exercisePicker(e => { if (e.id !== it.exId && !(it.alts = it.alts || []).includes(e.id)) it.alts.push(e.id); saveNow(); itemEditor(it.id); }, 'Alternative wählen'); },
+  taltdel: el => { const it = itemEditor.it; it.alts = (it.alts || []).filter(a => a !== el.dataset.id); saveNow(); itemEditor(it.id); },
+  pday: el => { const p = curPlan(); p.day = +el.dataset.v || null; saveNow(); render(); },
+  exstep: el => exerciseEditor.set('step', +el.dataset.v),
+  exbar: el => exerciseEditor.set('barbell', el.checked),
+  exleg: el => exerciseEditor.set('perLeg', el.checked),
+  exmus: el => exerciseEditor.set('muscle', el.dataset.v),
   trest: el => { const st = itemEditor.it.sets[+el.dataset.s]; st.rest = Math.max(0, Math.min(600, (st.rest || 0) + 15 * +el.dataset.d)); saveNow(); itemEditor(itemEditor.it.id); },
   tdel: el => { const it = itemEditor.it; if (it.sets.length > 1) it.sets.splice(+el.dataset.s, 1); saveNow(); itemEditor(it.id); },
   tadd: () => { const it = itemEditor.it, l = it.sets[it.sets.length - 1] || {}; it.sets.push({ t: 'n', kg: l.kg ?? '', kgAt: l.kgAt, goal: l.t === 'n' ? l.goal : (it.sets.find(x => x.t === 'n') || l).goal || '8-10', rest: l.t === 'n' ? l.rest : S.settings.rest }); saveNow(); itemEditor(it.id); },
@@ -975,7 +1026,8 @@ const A = {
     s.done = !s.done;
     if (s.done) {
       if (!(num(s.reps) > 0)) { s.done = false; toast(`Erst ${isTime(exOf(it.exId)) ? 'Sekunden' : 'Wdh.'} eintragen`); return; }
-      const sec = s.rest != null ? s.rest : (s.t === 'w' ? (it.warmRest || 0) : (it.rest || 0));
+      let sec = s.rest != null ? s.rest : (s.t === 'w' ? (it.warmRest || 0) : (it.rest || 0));
+      if (it.ss && s.t !== 'w') sec = 0; // Supersatz: Pause erst nach der nächsten Übung
       const allDone = S.active.items.every(i => i.sets.every(x => x.done));
       if (sec > 0 && !allDone) startTimer(sec); else stopTimer();
       const nx = it.sets.find((x, i) => i > +el.dataset.s && !x.done && x.t === s.t);
@@ -983,11 +1035,23 @@ const A = {
     }
     saveNow(); render();
   },
-  stype: el => { const s = sIt(el).sets[+el.dataset.s]; s.t = s.t === 'w' ? 'n' : 'w'; saveNow(); render(); },
+  stype: el => { const s = sIt(el).sets[+el.dataset.s]; s.t = nextT(s.t); if (s.t === 'bo' && s.factor == null) s.factor = 0.875; saveNow(); render(); },
+  salt: el => {
+    const idx = +el.dataset.id, it = S.active.items[idx];
+    modal(`<h3>Übung tauschen</h3><p class="info">Jede Übung hat ihre eigene Historie und eigene Gewichtsvorschläge.</p><div class="list">${[it.exId, ...it.alts].map((id, k) => `<div class="li tap" data-a="saltpick" data-i="${idx}" data-id="${id}"><div class="li-m"><b>${esc(exName(id))}</b><small>${k === 0 ? 'aktuell' : prevText(id)}</small></div>${k ? `<span class="chev">${IC.chev}</span>` : ''}</div>`).join('')}</div>`, [{ l: 'Schließen' }]);
+  },
+  saltpick: el => {
+    const idx = +el.dataset.i, it = S.active.items[idx], id = el.dataset.id;
+    if (id === it.exId) { closeModal(); return; }
+    if (it.sets.some(s => s.done)) { toast('Erst tauschen, bevor du Sätze abhakst'); return; }
+    // Feste kg aus dem Plan gehören zur Originalübung, Prozente und Faktoren bleiben
+    const tpl = itTpl(it).map(t => { const c = { ...t }; delete c.kg; delete c.kgAt; return c; });
+    const fresh = buildItem({ exId: id, sets: tpl, alts: [it.exId, ...it.alts.filter(a => a !== id)], rir: it.rir, note: it.pnote, ss: it.ss }, S.active.deload);
+    S.active.items[idx] = fresh; saveNow(); closeModal(); render(); toast('Getauscht: ' + exName(id));
+  },
   sadd: el => { const it = sIt(el), l = it.sets.filter(s => s.t !== 'w').pop() || it.sets[it.sets.length - 1], tw = itTpl(it).filter(x => x.t !== 'w')[0] || {}; it.sets.push({ t: 'n', kg: l ? l.kg : '', reps: l ? l.reps : range(tw.goal)[0], rir: '', goal: l ? l.goal : tw.goal, rest: l && l.rest != null ? l.rest : (tw.rest ?? S.settings.rest), done: false }); saveNow(); render(); },
   swadd: el => { const it = sIt(el), n = it.sets.filter(s => s.t === 'w').length, f = it.sets.find(s => s.t !== 'w'), w0 = it.sets.find(s => s.t === 'w'); it.sets.splice(n, 0, { t: 'w', kg: f && num(f.kg) > 0 ? roundStep(num(f.kg) * 0.5, S.settings.step) : '', reps: f ? f.reps : '', rest: w0 && w0.rest != null ? w0.rest : S.settings.warmRest, done: false }); saveNow(); render(); },
   srem: el => { const it = sIt(el); let i = it.sets.length - 1; while (i >= 0 && it.sets[i].done) i--; if (i >= 0) it.sets.splice(i, 1); else toast('Nur offene Sätze können entfernt werden'); saveNow(); render(); },
-  sugg: el => { const it = sIt(el), b = lastSets(it.exId); let i = 0; it.sets.forEach(s => { if (s.t !== 'w' && !s.done) { const bs = b.work[i] || b.work[b.work.length - 1]; s.kg = (num(bs.kg) || 0) + S.settings.step; s.reps = range(s.goal || it.target)[0]; i++; } }); saveNow(); render(); toast('+' + fmt(S.settings.step) + ' kg übernommen'); },
   exmenu: el => {
     const idx = +el.dataset.id, it = S.active.items[idx];
     const restOf = t => { const x = it.sets.find(s => (s.t === 'w') === (t === 'w')); return x ? (x.rest ?? (t === 'w' ? it.warmRest : it.rest)) || 0 : 0; };
@@ -1060,12 +1124,29 @@ document.addEventListener('change', e => {
 document.addEventListener('input', e => {
   const el = e.target, a = el.dataset.a;
   if (a === 'pname') { curPlan().name = el.value; $('#top h1').textContent = el.value || 'Neuer Plan'; saveSoon(); }
-  if (a === 'tkg' && itemEditor.it) { const st = itemEditor.it.sets[+el.dataset.s], v = num(el.value.trim()); st.kg = isFinite(v) ? v : ''; st.kgAt = Date.now(); saveSoon(); }
+  if (a === 'tkg' && itemEditor.it) {
+    const st = itemEditor.it.sets[+el.dataset.s], f = GL.parseKgField(el.value);
+    delete st.pct; delete st.kgAt; if (st.t === 'bo') delete st.factor; delete st.kg;
+    if (f.pct != null) { if (st.t === 'bo') st.factor = f.pct / 100; else if (st.t === 'w') st.pct = f.pct; }
+    else if (f.kg != null) { st.kg = f.kg; st.kgAt = Date.now(); }
+    saveSoon();
+  }
+  if (a === 'trir' && itemEditor.it) { itemEditor.it.rir = el.value.trim(); saveSoon(); }
+  if (a === 'tnote' && itemEditor.it) { itemEditor.it.note = el.value; saveSoon(); }
   if (a === 'tgoal' && itemEditor.it) { itemEditor.it.sets[+el.dataset.s].goal = el.value.trim(); saveSoon(); }
   if (a === 'srir') { const s = sIt(el).sets[+el.dataset.s], v = num(el.value.trim()); s.rir = isFinite(v) ? Math.max(0, Math.min(10, Math.round(v))) : ''; saveSoon(); }
   if (a === 'skg' || a === 'sreps') {
-    const s = sIt(el).sets[+el.dataset.s], f = a === 'skg' ? 'kg' : 'reps', v = el.value.trim();
-    s[f] = v === '' ? '' : (isFinite(num(v)) ? num(v) : s[f]); saveSoon();
+    const it = sIt(el), s = it.sets[+el.dataset.s], f = a === 'skg' ? 'kg' : 'reps', v = el.value.trim();
+    s[f] = v === '' ? '' : (isFinite(num(v)) ? num(v) : s[f]);
+    if (a === 'skg') {
+      const ref = it.sets.find(x => x.t === 'top') || it.sets.find(x => x.t !== 'w');
+      if (s === ref) {
+        // leere Folgesätze gleicher Art übernehmen das Gewicht, bis du sie selbst änderst
+        it.sets.forEach(x => { if (x !== s && x.t === s.t && !x.done && (x.kg === '' || x.auto)) { x.kg = s.kg; x.auto = true; } });
+        recalcLive(+el.dataset.id);
+      } else { delete s.auto; if (s.t === 'bo' || (s.t === 'w' && s.pct != null)) s.manual = true; }
+    }
+    saveSoon();
   }
 });
 document.addEventListener('focusin', e => { if (e.target.matches('.sets input, #wIn')) setTimeout(() => e.target.select(), 0); });
@@ -1076,7 +1157,7 @@ let kpT = null, kpFresh = false;
 const kpEl = () => $('#kp');
 function kpScope(el) { return el.closest('#modal') || $('#view'); }
 function kpNext(el) { const all = [...kpScope(el).querySelectorAll('[data-kp]')]; return all[all.indexOf(el) + 1] || null; }
-function kpStep(el) { return el.dataset.step ? parseFloat(el.dataset.step) : el.dataset.kp === 'dec' ? S.settings.step : 1; }
+function kpStep(el) { return el.dataset.step ? parseFloat(el.dataset.step) : (el.dataset.kp === 'dec' || el.dataset.kp === 'kgpct') ? S.settings.step : 1; }
 function kpOpen(el) {
   if (kpT && kpT !== el) kpCommit();
   if (kpT) kpT.classList.remove('kpf');
@@ -1087,7 +1168,7 @@ function kpOpen(el) {
     ${k('1')}${k('2')}${k('3')}${k('del', '⌫', 'fn')}
     ${k('4')}${k('5')}${k('6')}${t === 'range' ? k('-', '–', 'fn') : k('minus', '−' + fmt(st, 2), 'fn')}
     ${k('7')}${k('8')}${k('9')}${t === 'range' ? '<span></span>' : k('plus', '+' + fmt(st, 2), 'fn')}
-    ${t === 'dec' ? k(',') : '<span></span>'}${k('0')}${k('done', 'Fertig', 'fn')}${k(nx ? 'next' : 'done', nx ? 'Weiter' : 'OK', 'go')}</div>`;
+    ${t === 'dec' || t === 'kgpct' ? k(',') : '<span></span>'}${k('0')}${t === 'kgpct' ? k('%', '%', 'fn') : k('done', 'Fertig', 'fn')}${k(nx ? 'next' : 'done', nx ? 'Weiter' : 'OK', 'go')}</div>`;
   kpEl().classList.remove('hidden'); document.body.classList.add('kp-open');
   setTimeout(() => el.scrollIntoView({ block: 'center', behavior: 'smooth' }), 30);
 }
@@ -1106,10 +1187,12 @@ function kpKey(k) {
   if (k === 'next') { const n = kpNext(el); kpCommit(); if (n) { n.focus(); kpOpen(n); } else kpClose(); return; }
   if (k === 'del') { kpFresh = false; kpSet(el.value.slice(0, -1)); return; }
   if (k === 'minus' || k === 'plus') {
-    const st = kpStep(el), cur = num(el.value) || 0, n = Math.max(0, Math.round((cur + (k === 'plus' ? st : -st)) * 100) / 100);
-    kpFresh = false; kpSet(el.dataset.kp === 'dec' ? fmt(n, 2) : String(Math.round(n))); return;
+    const pc = el.value.trim().endsWith('%'), st = pc ? 5 : kpStep(el), cur = num(el.value.replace('%', '')) || 0, n = Math.max(0, Math.round((cur + (k === 'plus' ? st : -st)) * 100) / 100);
+    kpFresh = false; kpSet(pc ? fmt(n, 2) + '%' : (el.dataset.kp === 'dec' || el.dataset.kp === 'kgpct') ? fmt(n, 2) : String(Math.round(n))); return;
   }
-  if (k === ',' && (v.includes(',') || el.dataset.kp !== 'dec')) return;
+  if (k === ',' && (v.includes(',') || v.includes('%') || !['dec', 'kgpct'].includes(el.dataset.kp))) return;
+  if (k === '%' && (v.includes('%') || v === '')) return;
+  if (v.includes('%')) return;
   if (k === '-' && (v.includes('-') || v === '')) return;
   if (v.length >= 7) return;
   kpFresh = false; kpSet(v + k);
@@ -1128,6 +1211,12 @@ kpEl().addEventListener('click', e => { const b = e.target.closest('[data-k]'); 
 
 // ================= Start =================
 load();
+// Trainingsplan einmalig übernehmen (nur beim ersten Start dieser Version, nie bei einem Import)
+(() => {
+  let done = false; try { done = localStorage.getItem('seed') === GL_PROGRAM.SEED_ID; } catch (e) {}
+  if (!done && GL_PROGRAM.applyProgram(S, uid, Date.now())) { saveNow(); setTimeout(() => toast('Dein Trainingsplan ist eingerichtet 💪'), 600); }
+  try { localStorage.setItem('seed', GL_PROGRAM.SEED_ID); } catch (e) {}
+})();
 deloadAutoOff();
 syncReminder();
 if (S.active) { stack = [{ v: 'session' }]; tab = 'training'; keepAwake(true); }

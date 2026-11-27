@@ -1,27 +1,35 @@
 {
- "web": 9,
+ "web": 10,
  "minNative": 3,
  "files": [
   {
    "name": "app.css",
-   "sha256": "bda714cb1ff34743cf53a9ddc0d02c6c03e948222cafd853b714c6300e7d4a93"
+   "sha256": "eae37c7d683f60bc1ff9d2e96ed0939c94c5fb4188da5b9d5eec7ff889e2f7e0"
   },
   {
    "name": "app.js",
-   "sha256": "8f7f9627d1dae94bc51c09fdcd817aeaad1012e8955f104ba7c137a56f886698"
+   "sha256": "08aa48f31a001d1638459d5548eb148526d91d05f1c0c9ed94dd37c34b06d26e"
   },
   {
    "name": "index.html",
-   "sha256": "51592e9a38a1f620510603fd64af2efa2531301908beb37baa345c89708a44c1"
+   "sha256": "6ba302e871d80e76a8e44fedb4e58433efd6ac2109df505fd7236f90f1336ddb"
+  },
+  {
+   "name": "logic.js",
+   "sha256": "ac8cd634e1f75cfe02a38623b4d5e12f2651d0d7c6caa228d94532b6aa30d2a2"
+  },
+  {
+   "name": "program.js",
+   "sha256": "ae3a03e1aaae5cba9111a8e37553802812147b4c19019235f6215f6084369c52"
   },
   {
    "name": "version.json",
-   "sha256": "fb7e3e239a9e644218a5c0ddc4ed6a1f8cca687ae6058226f7cd3f7d40b71c03"
+   "sha256": "da7753f2612f0c55ef93dd9fdaf71bf2e35b15f38d3583e04729a854909b29f7"
   }
  ],
  "apk": "GymLog.apk",
  "apkVersion": 6,
  "apkVersionName": "1.5",
- "apkSha256": "0b3d156760bc696f0be05db32f926c60f28c83de55239c5de3ec68b9b1e38cd5",
- "notes": "Eigene Zahlentastatur"
+ "apkSha256": "ddc0867d0a4c6562d5d39df51b2e0d16b8596214b824c68c8f40e150716ab51c",
+ "notes": "Trainingsplan PPL, Top Set/Back-off, Progression, Wochen und Deload, Muskeln"
 }

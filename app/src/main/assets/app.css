@@ -226,3 +226,29 @@ body.kp-open #modal .sheet{padding-bottom:300px}
 body.kp-open #timer{display:none!important}
 input.kpf{border-color:var(--acc)!important;box-shadow:0 0 0 2px rgba(110,231,160,.25)}
 #wIn.kpf{box-shadow:none;color:var(--acc)}
+
+/* Satzarten, Hinweise, Supersatz, Alternativen */
+.badge.top{background:var(--accd);color:var(--acc)}
+.badge.bo{background:#16283B;color:var(--blue)}
+.tsets .badge.top{background:var(--accd)} .tsets .badge.bo{background:#16283B}
+.badge.top.done,.badge.bo.done{filter:brightness(1.25)}
+.hintchip{font-size:12.5px;font-weight:600;border-radius:10px;padding:7px 10px;margin:0 0 8px}
+.hintchip.up{background:var(--accd);color:var(--acc)}
+.hintchip.down{background:#3A1C1F;color:var(--red)}
+.hintchip.info{background:#16283B;color:var(--blue)}
+.notice.info{background:#16283B;color:#CFE3FF}
+.altchip{display:inline-flex;align-items:center;gap:6px;border:1px dashed var(--line);background:none;color:var(--mut);border-radius:20px;padding:5px 10px;font-size:12.5px;font-weight:600;margin:6px 0 0 4px;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.card.ex.ss1{border-bottom-left-radius:6px;border-bottom-right-radius:6px;box-shadow:inset 3px 0 0 var(--blue)}
+.card.ex.ss2{margin-top:4px!important;border-top-left-radius:6px;border-top-right-radius:6px;box-shadow:inset 3px 0 0 var(--blue)}
+.sslab{font-size:11.5px;font-weight:700;color:var(--blue);text-transform:uppercase;letter-spacing:.4px;margin:0 4px 8px}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{border:1px solid var(--line);background:none;border-radius:20px;padding:6px 11px;font-size:13px;color:var(--mut);font-weight:600}
+.chip.on{background:var(--accd);border-color:transparent;color:var(--acc)}
+.chip.half{background:#16283B;border-color:transparent;color:var(--blue)}
+.chip b{margin-left:4px}
+.card.plan.today{box-shadow:inset 0 0 0 1.5px var(--acc)}
+.plan-m .pill{align-self:flex-start;margin-bottom:2px}
+.day{display:inline-block;min-width:28px;color:var(--mut);font-weight:700;margin-right:4px}
+.mrow{padding:8px 0}
+.mrow-h{display:flex;justify-content:space-between;font-size:14.5px;margin-bottom:6px}
+.mrow .bar{margin-top:0}

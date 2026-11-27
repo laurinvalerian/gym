@@ -2,6 +2,10 @@
 
 Android App (WebView Hülle + Offline Oberfläche). Oberfläche: `app/src/main/assets` (index.html, app.css, app.js). Java: `app/src/main/java/de/gymlog/app`.
 
+* `assets/logic.js`: Trainingslogik ohne Oberfläche (Progression, Aufwärmen in %, Back-off, Wochen/Wiedereinstieg/Deload, Sätze pro Muskel). Neue Logik hierhin, mit Unit Tests.
+* `assets/program.js`: der PPL-Plan als Vorlage, wird einmalig beim Start übernommen (`settings.seed`).
+* Tests: `node --test tests/*.test.js`
+
 ## Nach jeder Änderung veröffentlichen
 Die App aktualisiert sich selbst über `update/manifest.json` (geladen von raw.githubusercontent.com/laurinvalerian/gym/HEAD/update/).
 
