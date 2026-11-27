@@ -521,7 +521,7 @@ function itemEditor(itemId) {
   modal(`<h3>${esc(ex.name)}</h3><div class="sub">${exTags(ex)} · <span class="tap acc" data-a="itexedit" data-id="${ex.id}">Name / Typ ändern</span></div>
     <div class="tsets ${hasKg(ex) ? 'kg' : ''}"><span>Satz</span>${hasKg(ex) ? `<span>${kgHead(ex)}</span>` : ''}<span>${isTime(ex) ? 'Sek.' : 'Wdh.'}</span><span>Pause</span><span></span>${rows}</div>
     <button class="btn block" data-a="tadd" style="margin-top:10px">+ Satz</button>
-    <div class="hint">Tipp auf die Nummer: Aufwärmsatz (W) oder normaler Satz. Wdh. als Zahl oder Bereich, z.B. 8-10.${hasKg(ex) ? ' Gewicht ist optional: Im Training wird sonst das Gewicht vom letzten Mal vorgeschlagen. Änderst du es hier, gilt beim nächsten Training dein neuer Wert.' : ''}</div>
+    <div class="hint">Tipp auf die Nummer: Aufwärmsatz (W) oder normaler Satz. ${isTime(ex) ? 'Sekunden als Zahl oder Bereich, z.B. 30-45.' : 'Wdh. als Zahl oder Bereich, z.B. 8-10.'}${hasKg(ex) ? ' Gewicht ist optional: Im Training wird sonst das Gewicht vom letzten Mal vorgeschlagen. Änderst du es hier, gilt beim nächsten Training dein neuer Wert.' : ''}</div>
     <div class="two"><button class="btn" data-a="imove" data-s="-1" ${i === 0 ? 'disabled' : ''}>↑ Nach oben</button><button class="btn" data-a="imove" data-s="1" ${i === p.items.length - 1 ? 'disabled' : ''}>↓ Nach unten</button></div>`,
     [{ l: 'Aus Plan entfernen', c: 'danger', f: () => { p.items = p.items.filter(x => x !== it); saveNow(); render(); } }, { l: 'Fertig', c: 'pri', f: () => { saveNow(); render(); } }]);
 }

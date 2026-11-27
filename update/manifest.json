@@ -1,5 +1,5 @@
 {
- "web": 7,
+ "web": 8,
  "minNative": 3,
  "files": [
   {
@@ -8,7 +8,7 @@
   },
   {
    "name": "app.js",
-   "sha256": "050f0577123fbe6668a108dde3aed2aba9801126db1a36d618863f3a46a57415"
+   "sha256": "0bc010507f5980c68db293d2f5dfded25e0e25cb7e226ab900a55ce9397018a0"
   },
   {
    "name": "index.html",
@@ -16,12 +16,12 @@
   },
   {
    "name": "version.json",
-   "sha256": "e3f69d10c2b7843bdbf01472c45159f306f721a85ec85043618ea4c8cbd61493"
+   "sha256": "15c228bfb607aeefcced87297bd6b4a346f74bd278ce7530fcd8ef1398aff53f"
   }
  ],
  "apk": "GymLog.apk",
  "apkVersion": 6,
  "apkVersionName": "1.5",
- "apkSha256": "4a65f729c8b9a4dfa3ae9f7683c26908c39a172d329ea5c323072a84d0611ae9",
- "notes": "Gewicht pro Satz im Plan festlegen"
+ "apkSha256": "4b52b6e4c9a262c97edb9f166bf84d51165d8507f63730a56bfde40c2e17c684",
+ "notes": "Hinweistext je nach Übungstyp"
 }
